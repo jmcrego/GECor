@@ -11,8 +11,8 @@ from model.Learning import Learning
 from model.Dataset import Dataset
 from model.Vocab import Vocab
 from model.Tokenizer import Tokenizer
+from model.Utils import create_logger
 from transformers import FlaubertModel, FlaubertTokenizer
-from tools.Utils import create_logger
 
 ######################################################################
 ### MAIN #############################################################
