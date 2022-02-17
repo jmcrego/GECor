@@ -38,5 +38,5 @@ class Inference():
         for i in range(1,len(words)-1):
             curr_tags = [self.tags[tag_idx] for tag_idx in kbest_tags[i].tolist()]
             curr_wrds = [self.words[wrd_idx] for wrd_idx in kbest_wrds[i].tolist()]
-            logging.info("{}\t{}\t{}".format(words[i], ' '.join(curr_tags), ' '.join(curr_wrds)))
+            logging.info("{}\t{}\t{}".format(words[i], '--'.join(curr_tags), '--'.join(curr_wrds)))
         return idx, corrected_words
