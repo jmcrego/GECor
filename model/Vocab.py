@@ -25,7 +25,7 @@ class Vocab():
                     continue
                 self.vocab[wrd] = len(self.vocab)
                 self.VOCAB.append(wrd)
-        logging.info('Read Vocab={} with {} elements'.format(f,len(self.vocab)))
+        logging.info('Read Vocab={} with {} entries'.format(f,len(self.vocab)))
 
     def __contains__(self, s):
         return s in self.vocab

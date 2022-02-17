@@ -197,7 +197,7 @@ class Dataset():
         batch_ids = pad_listoflists(batch_ids, pad=self.idx_PAD_src, maxl=maxl_ids)
         batch_ids2words = pad_listoflists(batch_ids2words, pad=-1, maxl=maxl_ids)
         if self.is_inference:
-            return [batch_ids, batch_ids2words]
+            return [batch_ids, batch_ids2words, idxs]
 
         #if reftags/refwords are smaller than ids/ids2words i add PAD so as to obtain the same size
         batch_reftags = pad_listoflists(batch_reftags,pad=self.idx_PAD_tgt,maxl=maxl_ids)

@@ -14,6 +14,7 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
     parser.add_argument('--tags', action='store_true', help='Build vocabulary of tags from noisy examples')
+    parser.add_argument('--nofreq', action='store_true', help='Do not print frequencies')
     args = parser.parse_args()
     
     create_logger(None,'info')
@@ -40,5 +41,8 @@ if __name__ == '__main__':
                 
     logging.info('Found {} tokens for a vocabulary of {} entries'.format(n_words,len(word2freq)))
     for word, freq in sorted(word2freq.items(), key=lambda kv:kv[1], reverse=True):
-        print(word,freq)
+        if args.nofreq:
+            print(word)
+        else:
+            print(word,freq)
     logging.info('Done')

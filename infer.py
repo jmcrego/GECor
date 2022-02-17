@@ -7,7 +7,7 @@ import torch
 import argparse
 import torch.optim as optim
 from model.GECor import GECor, load_or_create_checkpoint, load_checkpoint, save_checkpoint, CE2
-from model.Learning import Learning
+from model.Inference import Inference
 from model.Dataset import Dataset
 from model.Vocab import Vocab
 from model.Tokenizer import Tokenizer
@@ -52,21 +52,13 @@ if __name__ == '__main__':
     device = torch.device('cuda' if args.cuda and torch.cuda.is_available() else 'cpu')
     model = GECor(len(tags), len(words), encoder_name="flaubert/flaubert_base_cased").to(device)
     
-    ############################
-    ### build scheduler/loss ###
-    ############################
-    if args.loss == 'CE2':
-        criter = CE2(args.label_smoothing,args.beta).to(device)
-    else:
-        logging.error('Invalid --loss option')
-        sys.exit()
-        
     #############
-    ### learn ###
+    ### infer ###
     #############
     tokenizer = Tokenizer("flaubert/flaubert_base_cased")
     testset = Dataset(args.test, tags, words, tokenizer, args)
-    
+    inference = Inference(model, testset, words, tags, words.idx_PAD, args, device)
+
     toc = time.time()
     logging.info('Done ({:.2f} seconds)'.format(toc-tic))
 
