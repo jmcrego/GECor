@@ -151,12 +151,14 @@ class Dataset():
 
 
     def format_batch(self, idxs):
+        batch_words = []
         batch_ids = []
         batch_ids2words = []
         batch_reftags = []
         batch_refwords = []
         maxl_ids = 0
         for idx in idxs:
+            curr_words = self.Data[idx]['words'] ### contains <s> and </s>
             curr_ids = self.Data[idx]['ids'] ### contains <s> and </s>
             maxl_ids = len(curr_ids) if len(curr_ids) > maxl_ids else maxl_ids
             curr_ids2words = self.Data[idx]['ids2words']
@@ -188,6 +190,7 @@ class Dataset():
                         curr_reftags.append(self.tags[curr_tags[i]]) #idx(·) OR idx(PAD) OR idx(APPEND) ...
                         curr_refwords.append(self.idx_PAD_tgt) #idx(PAD)
             ### add example
+            batch_words.append(curr_words)
             batch_ids.append(curr_ids)
             batch_ids2words.append(curr_ids2words)
             if not self.is_inference:
@@ -197,7 +200,7 @@ class Dataset():
         batch_ids = pad_listoflists(batch_ids, pad=self.idx_PAD_src, maxl=maxl_ids)
         batch_ids2words = pad_listoflists(batch_ids2words, pad=-1, maxl=maxl_ids)
         if self.is_inference:
-            return [batch_ids, batch_ids2words, idxs]
+            return [batch_ids, batch_ids2words, batch_words, idxs]
 
         #if reftags/refwords are smaller than ids/ids2words i add PAD so as to obtain the same size
         batch_reftags = pad_listoflists(batch_reftags,pad=self.idx_PAD_tgt,maxl=maxl_ids)

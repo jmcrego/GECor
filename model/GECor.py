@@ -32,7 +32,11 @@ def load_checkpoint(fmodel, model, optimizer, device):
     logging.info('Loaded checkpoint step={} encoder_freezed={} from {} device={}'.format(step,model.encoder_freezed,fmodel,device))
     return step, model, optimizer
 
-
+def load_model(fmodel, model, device):
+    checkpoint = torch.load(fmodel, map_location=device)
+    model.load_state_dict(checkpoint['model'])
+    return model
+    
 def save_checkpoint(fmodel, model, optimizer, step, keep_last_n):
     checkpoint = { 'step': step, 'model': model.state_dict(), 'optimizer': optimizer.state_dict() }
     torch.save(checkpoint, "{}.{:08d}.pt".format(fmodel,step))

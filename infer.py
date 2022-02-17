@@ -6,7 +6,7 @@ import logging
 import torch
 import argparse
 import torch.optim as optim
-from model.GECor import GECor, load_or_create_checkpoint, load_checkpoint, save_checkpoint, CE2
+from model.GECor import GECor, load_or_create_checkpoint, load_checkpoint, save_checkpoint, CE2, load_model
 from model.Inference import Inference
 from model.Dataset import Dataset
 from model.Vocab import Vocab
@@ -26,8 +26,12 @@ if __name__ == '__main__':
     ### network
     parser.add_argument('--tags', help='Vocabulary of tags (required)', required=True)
     parser.add_argument('--words', help='Vocabulary of words (required)', required=True)
-    parser.add_argument('--aggregation', type=str, default="max", help='Aggregation when merging embeddings (max)')    
+    parser.add_argument('--aggregation', type=str, default="max", help='Aggregation when merging embeddings (max)')
+    ### 
+    parser.add_argument('--K', type=int, default=1, help='Output K-best options (1)')    
     ### data
+    parser.add_argument('--shard_size', type=int, default=5000000, help='Examples in shard (5000000)')
+    parser.add_argument('--max_length', type=int, default=0, help='Maximum example length (0)')    
     parser.add_argument('--batch_size', type=int, default=4096, help='Batch size (4096)')
     parser.add_argument('--batch_type', type=str, default="tokens", help='Batch type: tokens or sentences (tokens)')
     ### others
@@ -51,7 +55,8 @@ if __name__ == '__main__':
     words = Vocab(args.words)
     device = torch.device('cuda' if args.cuda and torch.cuda.is_available() else 'cpu')
     model = GECor(len(tags), len(words), encoder_name="flaubert/flaubert_base_cased").to(device)
-    
+    model = load_model(args.model,model,device)
+
     #############
     ### infer ###
     #############
