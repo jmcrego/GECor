@@ -79,7 +79,7 @@ class Score():
                 fp = self.tag2fp[tag]
                 fn = self.tag2fn[tag]
                 #logging.info('valid/TP: {:.3f} ({}) [{}]'.format(tp,self.tag2n[tag],self.tags[tag]))
-                if tp>0 or (fp>0 and fn>0):
+                if tp>0:
                     P = tp / (tp + fp)
                     R = tp / (tp + fn)
                     F1 = 2.0*P*R / (P + R)
