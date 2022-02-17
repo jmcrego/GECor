@@ -6,15 +6,15 @@ import json
 import copy
 import random
 import unicodedata
-from Keyboard import Keyboard
-from Lexicon import Lexicon
-from Vocab import Vocab
-from Spacy import Spacy
-from Tokenizer import Tokenizer
+from model.Keyboard import Keyboard
+from model.Lexicon import Lexicon
+from model.Vocab import Vocab
+from model.Spacy import Spacy
+from model.Tokenizer import Tokenizer
+from model.Utils import create_logger
 from collections import defaultdict
 from transformers import FlaubertTokenizer
 import logging
-from Utils import create_logger
 
 separ = '￨'
 keep = '·'
