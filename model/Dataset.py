@@ -104,6 +104,9 @@ class Dataset():
                 self.Data.append({'words':words , 'tags':tags, 'ids':ids, 'ids2words':ids2words, 'idx':idx})
 
         logging.info('Read [{}] dataset={} with {} examples [{} filtered]'.format('inference' if self.is_inference else 'learning', fname,len(self.Data),n_filtered))
+
+    def __len__(self):
+        return len(self.Data)
         
     def __iter__(self):
         assert len(self.Data) > 0, 'Empty dataset'

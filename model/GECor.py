@@ -65,14 +65,12 @@ class CE2(torch.nn.Module):
     
 class GECor(nn.Module):
 
-    def __init__(self, n_tags, n_words, encoder_name="flaubert/flaubert_base_cased", dropout_tags=0., dropout_words=0., aggregation='sum', encoder_freezed=True):
+    def __init__(self, n_tags, n_words, encoder_name="flaubert/flaubert_base_cased", aggregation='sum', encoder_freezed=True):
         super(GECor, self).__init__()
         self.encoder = FlaubertModel.from_pretrained(encoder_name)
         self.emb_size = self.encoder.attentions[0].out_lin.out_features
         self.linear_layer_tags = nn.Linear(self.emb_size, n_tags)
         self.linear_layer_words = nn.Linear(self.emb_size, n_words)
-        self.dropout_layer_tags = nn.Dropout(p=dropout_tags) if dropout_tags > 0.0 else None
-        self.dropout_layer_words = nn.Dropout(p=dropout_words) if dropout_words > 0.0 else None
         self.aggregation = aggregation
         self.n_tags = n_tags
         self.n_words = n_words
@@ -94,21 +92,10 @@ class GECor(nn.Module):
             logging.error('Indexs bad formatted!')
             sys.exit()
 
-        #logging.info('embeddings.shape {}'.format(embeddings.shape))
         embeddings_merge = torch.zeros_like(embeddings, dtype=embeddings.dtype, device=embeddings.device)
         torch_scatter.segment_coo(embeddings, indexs, out=embeddings_merge, reduce=self.aggregation)
-        #logging.info('embeddings_merge.shape {}'.format(embeddings_merge.shape))
-        
         out_tags_merge = self.linear_layer_tags(embeddings_merge)
-        #logging.info('out_tags_merge.shape {}'.format(out_tags_merge.shape))
-        if self.dropout_layer_tags:
-            out_tags_merge = self.dropout_layer_tags(out_tags_merge)
-
         out_words_merge = self.linear_layer_words(embeddings_merge)
-        #logging.info('out_words_merge.shape {}'.format(out_words_merge.shape))
-        if self.dropout_layer_words:
-            out_words_merge = self.dropout_layer_words(out_words_merge)
-
         return out_tags_merge, out_words_merge
 
     def parameters(self):

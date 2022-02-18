@@ -29,8 +29,6 @@ if __name__ == '__main__':
     parser.add_argument('--words', help='Vocabulary of words (required)', required=True)
     parser.add_argument('--aggregation', type=str, default="max", help='Aggregation when merging embeddings (max)')    
     ### optim
-    parser.add_argument('--dropout_tags', type=float, default=0.1, help='Dropout for tags layer (0.1)')
-    parser.add_argument('--dropout_words', type=float, default=0.1, help='Dropout for words layer (0.1)')
     parser.add_argument('--label_smoothing', type=float, default=0.1, help='Label smoothing value (0.1)')
     parser.add_argument('--loss', type=str, default="CE2", help='Loss function (CE2)')
     parser.add_argument('--beta', type=float, default=1.0, help='Beta for CE2 loss (1.0)')
@@ -70,7 +68,7 @@ if __name__ == '__main__':
     tags = Vocab(args.tags)
     words = Vocab(args.words)
     device = torch.device('cuda' if args.cuda and torch.cuda.is_available() else 'cpu')
-    model = GECor(len(tags), len(words), encoder_name="flaubert/flaubert_base_cased", dropout_tags=args.dropout_tags, dropout_words=args.dropout_words, aggregation=args.aggregation, encoder_freezed=args.unfreeze_encoder>0).to(device)
+    model = GECor(len(tags), len(words), encoder_name="flaubert/flaubert_base_cased", aggregation=args.aggregation, encoder_freezed=args.unfreeze_encoder>0).to(device)
     optim = optim.Adam(model.parameters(), lr=args.lr)
     last_step, model, optim = load_or_create_checkpoint(args.model, model, optim, device)
     

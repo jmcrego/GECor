@@ -140,12 +140,12 @@ class Learning():
                     if args.report_every and step % args.report_every == 0:
                         score.report(step, 'train')
                         score = Score(tags, writer)
-                    ### validate ###
-                    if args.validate_every and step % args.validate_every == 0: 
-                        self.validate(model, criter, step, validset, tags, idx_PAD, writer, device)
                     ### save ###
                     if args.save_every and step % args.save_every == 0: 
                         save_checkpoint(args.model, model, optim, step, args.keep_last_n)
+                    ### validate ###
+                    if args.validate_every and step % args.validate_every == 0: 
+                        self.validate(model, criter, step, validset, tags, idx_PAD, writer, device)
                     ### stop by max_steps ###
                     if args.max_steps and step >= args.max_steps: 
                         self.validate(model, criter, step, validset, tags, idx_PAD, writer, device)
