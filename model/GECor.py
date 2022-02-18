@@ -38,6 +38,9 @@ def load_model(fmodel, model, device):
     return model
     
 def save_checkpoint(fmodel, model, optimizer, step, keep_last_n):
+    if os.path.isfile("{}.{:08d}.pt".format(fmodel,step)):
+        logging.info('Checkpoint already exists')
+        return
     checkpoint = { 'step': step, 'model': model.state_dict(), 'optimizer': optimizer.state_dict() }
     torch.save(checkpoint, "{}.{:08d}.pt".format(fmodel,step))
     logging.info('Saved checkpoint step={} encoder_freezed={} in {}.{:08d}.pt'.format(step,model.encoder_freezed,fmodel,step))
