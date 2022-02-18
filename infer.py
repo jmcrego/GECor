@@ -28,7 +28,8 @@ if __name__ == '__main__':
     parser.add_argument('--words', help='Vocabulary of words (required)', required=True)
     parser.add_argument('--aggregation', type=str, default="max", help='Aggregation when merging embeddings (max)')
     ### 
-    parser.add_argument('--K', type=int, default=1, help='Output K-best options (1)')    
+    parser.add_argument('--Kt', type=int, default=1, help='Output K-best tag options (1)')    
+    parser.add_argument('--Kw', type=int, default=1, help='Output K-best word options (1)')    
     ### data
     parser.add_argument('--shard_size', type=int, default=5000000, help='Examples in shard (5000000)')
     parser.add_argument('--max_length', type=int, default=0, help='Maximum example length (0)')    
