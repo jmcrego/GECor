@@ -52,51 +52,82 @@ class Inference():
         self.corrected_sentences[idx] = corrected_words
 
     def correct(self, word, curr_wrds, curr_tags, word_next=None):
+
         if curr_tags[0] == keep:
             return word, False
+        
         elif curr_tags[0] == '$REPLACE:INFLECTION':
             return curr_wrds[0], False
+        
         elif curr_tags[0] == '$REPLACE:SAMEPOS':
             return curr_wrds[0], False
+        
         elif curr_tags[0] == '$REPLACE:HOMOPHONE':
             return curr_wrds[0], False
+        
         elif curr_tags[0] == '$REPLACE:SPELL':
             return curr_wrds[0], False
+        
         elif curr_tags[0] == '$APPEND':
             return word + " " + curr_wrds[0], False
+        
         elif curr_tags[0] == '$DELETE':
             return "", False
-        elif curr_tags[0] == '$MERGE': ### must delete next word
+        
+        elif curr_tags[0] == '$MERGE':
             if word_next is not None:
-                return word + word_next, True
-        elif curr_tags[0] == '$SWAP': ### must delete next word
+                return word + word_next, True ### must delete next word
+            else:
+                return word, False
+            
+        elif curr_tags[0] == '$SWAP':
             if word_next is not None:
-                return word_next + " " + word, True
+                return word_next + " " + word, True ### must delete next word
+            else:
+                return word, False
+            
         elif curr_tags[0] == '$SPLIT':
             if word.startswith(curr_wrds[0]):
                 k = len(curr_wrds[0])
                 return word + " " + curr_wrds[0][k:], False
+            else:
+                return word, False
+            
         elif curr_tags[0] == '$CASE:FIRST':
             if word[0].isupper():
                 word[0] = word[0].lower()
             elif word[0].islower():
                 word[0] = word[0].upper()
             return word, False
+        
         elif curr_tags[0] == '$CASE:UPPER':
-            if word.is_lower():
+            if word.islower():
                 return word.upper(), False
+            else:
+                return word, False
+            
         elif curr_tags[0] == '$CASE:LOWER':
-            if word.is_upper():
+            if word.isupper():
                 return word.lower(), False
+            else:
+                return word, False
+            
         elif curr_tags[0] == '$HYPHEN:SPLIT':
             if "-" in word:
                 toks = word.split('-')
                 return ' '.join(toks), False
-        elif curr_tags[0] == '$HYPHEN:MERGE': ### must delete next word
+            else:
+                return word, False
+            
+        elif curr_tags[0] == '$HYPHEN:MERGE':
             if word_next is not None:
-                return word + "-" + word_next, True
+                return word + "-" + word_next, True ### must delete next word
+            else:
+                return word, False
+            
         elif curr_tags[0].startswith('$INFLECT:'):
             return curr_tags[0] + "(" + word + ")", False
+        
         else:
             logging.error('Bad tag: '.format(curr_tags[0]))
             sys.exit()
