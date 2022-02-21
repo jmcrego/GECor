@@ -28,6 +28,7 @@ if __name__ == '__main__':
     parser.add_argument('--tags', help='Vocabulary of tags (required)', required=True)
     parser.add_argument('--words', help='Vocabulary of words (required)', required=True)
     parser.add_argument('--aggregation', type=str, default="max", help='Aggregation when merging embeddings (max)')    
+    parser.add_argument('--tag_embedding_size', type=int, default=0, help='Size of tag embeddings (0)')
     ### optim
     parser.add_argument('--label_smoothing', type=float, default=0.1, help='Label smoothing value (0.1)')
     parser.add_argument('--loss', type=str, default="CE2", help='Loss function (CE2)')
@@ -44,7 +45,7 @@ if __name__ == '__main__':
     parser.add_argument('--report_every', type=int, default=100, help='Report every this steps (100)')
     parser.add_argument('--keep_last_n', type=int, default=2, help='Save last n models (2)')
     ### data
-    parser.add_argument('--shard_size', type=int, default=5000000, help='Examples in shard (5000000)')
+    parser.add_argument('--shard_size', type=int, default=2000000, help='Examples in shard (2000000)')
     parser.add_argument('--max_length', type=int, default=200, help='Maximum example length (200)')
     parser.add_argument('--batch_size', type=int, default=4096, help='Batch size (4096)')
     parser.add_argument('--batch_type', type=str, default="tokens", help='Batch type: tokens or sentences (tokens)')
@@ -68,7 +69,7 @@ if __name__ == '__main__':
     tags = Vocab(args.tags)
     words = Vocab(args.words)
     device = torch.device('cuda' if args.cuda and torch.cuda.is_available() else 'cpu')
-    model = GECor(len(tags), len(words), encoder_name="flaubert/flaubert_base_cased", aggregation=args.aggregation, encoder_freezed=args.unfreeze_encoder>0).to(device)
+    model = GECor(len(tags), len(words), encoder_name="flaubert/flaubert_base_cased", aggregation=args.aggregation, tag_embedding=args.tag_embedding_size, encoder_freezed=args.unfreeze_encoder>0).to(device)
     optim = optim.Adam(model.parameters(), lr=args.lr)
     last_step, model, optim = load_or_create_checkpoint(args.model, model, optim, device)
     
