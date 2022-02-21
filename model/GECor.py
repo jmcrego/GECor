@@ -65,12 +65,14 @@ class CE2(torch.nn.Module):
     
 class GECor(nn.Module):
 
-    def __init__(self, n_tags, n_words, encoder_name="flaubert/flaubert_base_cased", aggregation='sum', encoder_freezed=True):
+    def __init__(self, n_tags, n_words, encoder_name="flaubert/flaubert_base_cased", aggregation='sum', tag_embedding=0, encoder_freezed=True):
         super(GECor, self).__init__()
         self.encoder = FlaubertModel.from_pretrained(encoder_name)
         self.emb_size = self.encoder.attentions[0].out_lin.out_features
         self.linear_layer_tags = nn.Linear(self.emb_size, n_tags)
         self.linear_layer_words = nn.Linear(self.emb_size, n_words)
+        if tag_embedding > 0:
+            self.tag_embedding = nn.Embedding(n_tags, tag_embedding, padding_idx=None, max_norm=None, norm_type=2.0, scale_grad_by_freq=False, sparse=False, _weight=None, device=None, dtype=None)
         self.aggregation = aggregation
         self.n_tags = n_tags
         self.n_words = n_words
@@ -95,7 +97,12 @@ class GECor(nn.Module):
         embeddings_merge = torch.zeros_like(embeddings, dtype=embeddings.dtype, device=embeddings.device)
         torch_scatter.segment_coo(embeddings, indexs, out=embeddings_merge, reduce=self.aggregation)
         out_tags_merge = self.linear_layer_tags(embeddings_merge)
-        out_words_merge = self.linear_layer_words(embeddings_merge)
+        
+        tags_idx = torch.argsort(out_tags_merge, dim=-1, descending=True)[:,:,0] #[bs, l, ts] => [bs, l, 1] ### get the one-best of each token
+        embeddings_tags = self.tag_embedding(tags_idx)
+        
+        embeddings_cat = torch.cat((embeddings_merge, embeddings_tags),dim=-1) #[bs, l, es+ts]
+        out_words_merge = self.linear_layer_words(embeddings_cat) #[bs, l, ws]
         return out_tags_merge, out_words_merge
 
     def parameters(self):
