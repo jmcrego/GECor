@@ -10,6 +10,7 @@ from model.GECor import GECor, load_or_create_checkpoint, load_checkpoint, save_
 from model.Inference import Inference
 from model.Dataset import Dataset
 from model.Vocab import Vocab
+from model.Lexicon import Lexicon
 from model.Tokenizer import Tokenizer
 from model.Utils import create_logger
 from transformers import FlaubertModel, FlaubertTokenizer
@@ -49,13 +50,16 @@ if __name__ == '__main__':
     logging.info("Options = {}".format(args.__dict__))
     tic = time.time()
 
+    lex = Lexicon('resources/Lexique383.tsv')
+    voc = Vocab('resources/BODY_2017.vocab.50k')
+    
     ########################
     ### load model/optim ###
     ########################
     tags = Vocab(args.tags)
     words = Vocab(args.words)
     device = torch.device('cuda' if args.cuda and torch.cuda.is_available() else 'cpu')
-    model = GECor(len(tags), len(words), encoder_name="flaubert/flaubert_base_cased").to(device)
+    model = GECor(len(tags), len(words), encoder_name="flaubert/flaubert_base_cased", tag_embedding=64).to(device)
     model = load_model(args.model,model,device)
 
     #############
@@ -63,7 +67,7 @@ if __name__ == '__main__':
     #############
     tokenizer = Tokenizer("flaubert/flaubert_base_cased")
     testset = Dataset(args.test, tags, words, tokenizer, args)
-    inference = Inference(model, testset, words, tags, words.idx_PAD, args, device)
+    inference = Inference(model, testset, words, tags, lex, voc, words.idx_PAD, args, device)
 
     toc = time.time()
     logging.info('Done ({:.2f} seconds)'.format(toc-tic))

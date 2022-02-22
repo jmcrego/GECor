@@ -12,10 +12,12 @@ from collections import defaultdict
 
 class Inference():
 
-    def __init__(self, model, testset, words, tags, idx_PAD, args, device):
+    def __init__(self, model, testset, words, tags, lex, voc, idx_PAD, args, device):
         super(Inference, self).__init__()
         self.tags = tags
         self.words = words
+        self.lex = lex
+        self.voc = voc
         self.args = args
         self.corrected_sentences = [None] * len(testset)
         model.eval()
@@ -37,37 +39,104 @@ class Inference():
     def sentence(self,idx,words,kbest_tags,kbest_wrds):
         #kbest_tags [l,Kt]
         #kbest_wrds [l,Kw]
-        logging.info('idx: {}'.format(idx))
+        logging.debug('idx: {}'.format(idx))
         corrected_words = []
         for i in range(1,len(words)-1):
             if words[i] == "": ### has been deleted
                 continue
             curr_tags = [self.tags[tag_idx] for tag_idx in kbest_tags[i].tolist()]
             curr_wrds = [self.words[wrd_idx] for wrd_idx in kbest_wrds[i].tolist()]
-            logging.info("{}\t{}\t{}".format(words[i], curr_tags, curr_wrds))
+            logging.debug("{}\t{}\t{}".format(words[i], curr_tags, curr_wrds))
             corrected_word, delete_next = self.correct(words[i], curr_wrds,curr_tags, word_next=words[i+1] if i+1<len(words) else None)
             corrected_words.append(corrected_word)
             if delete_next:
                 words[i+1] = ""
         self.corrected_sentences[idx] = corrected_words
 
+
+    def find_inflection(self, word, curr_wrds):
+        logging.debug('\tfind_inflection({})'.format(word))
+        if word in self.lex.wrd2wrds_same_lemma:
+            words_same_lemma = self.lex.wrd2wrds_same_lemma[word]
+            logging.debug('\tinflections: {}'.format(words_same_lemma))
+            for i, wrd in enumerate(curr_wrds):
+                if wrd in words_same_lemma and wrd != word:
+                    logging.debug('\tfirst inflection: {}'.format(curr_wrds[i]))
+                    return i
+        return -1
+
+    def find_samepos(self, word, curr_wrds):
+        logging.debug('\tfind_samepos({})'.format(word))
+        if word in self.lex.wrd2wrds_same_pos:
+            words_same_pos = self.lex.wrd2wrds_same_pos[word]
+            logging.debug('\tsamepos: {}'.format(words_same_pos))
+            for i, wrd in enumerate(curr_wrds):
+                if wrd in words_same_pos and wrd != word:
+                    logging.debug('\tfirst samepos: {}'.format(curr_wrds[i]))
+                    return i
+        return -1
+
+    def find_homophone(self, word, curr_wrds):
+        logging.debug('\tfind_homophone({})'.format(word))
+        if word in self.lex.wrd2wrds_homophones:
+            words_homophones = self.lex.wrd2wrds_homophones[word]
+            logging.debug('\thomophones: {}'.format(words_homophones))
+            for i, wrd in enumerate(curr_wrds):
+                if wrd in words_homophones and wrd != word:
+                    logging.debug('\tfirst homophone: {}'.format(curr_wrds[i]))
+                    return i
+        return -1
+
+
+    def is_spell(self, wrd1, wrd2):
+        swrd1 = set(wrd1.split())
+        swrd2 = set(wrd2.split())
+        if len(swrd1-swrd2) <= 1 and len(swrd2-swrd1) <= 1:
+            return True
+        return False
+        
+    def find_spell(self, word, curr_wrds):
+        logging.debug('\tfind_spell({})'.format(word))
+        for i, wrd in enumerate(curr_wrds):
+            if self.is_spell(wrd,curr_wrds[i]) and wrd != word:
+                logging.debug('\tfirst spell: {}'.format(curr_wrds[i]))
+                return i
+        return -1
+
+
+
+
+    
+        
     def correct(self, word, curr_wrds, curr_tags, word_next=None):
 
         if curr_tags[0] == keep:
             return word, False
         
         elif curr_tags[0] == '$REPLACE:INFLECTION':
-            return curr_wrds[0], False
+            i = self.find_inflection(word, curr_wrds)
+            if i>=0:
+                return curr_wrds[i], False
+            return word, False ### no change
         
         elif curr_tags[0] == '$REPLACE:SAMEPOS':
-            return curr_wrds[0], False
+            i = self.find_samepos(word, curr_wrds)
+            if i>=0:
+                return curr_wrds[i], False
+            return word, False ### no change
         
         elif curr_tags[0] == '$REPLACE:HOMOPHONE':
-            return curr_wrds[0], False
+            i = self.find_homophone(word, curr_wrds)
+            if i>=0:
+                return curr_wrds[i], False
+            return word, False ### no change
         
         elif curr_tags[0] == '$REPLACE:SPELL':
-            return curr_wrds[0], False
-        
+            i = self.find_spell(word, curr_wrds)
+            if i>=0:
+                return curr_wrds[i], False
+            return word, False ### no change
+
         elif curr_tags[0] == '$APPEND':
             return word + " " + curr_wrds[0], False
         
@@ -95,9 +164,9 @@ class Inference():
             
         elif curr_tags[0] == '$CASE:FIRST':
             if word[0].isupper():
-                word[0] = word[0].lower()
+                word = word[0].lower() + word[1:]
             elif word[0].islower():
-                word[0] = word[0].upper()
+                word = word[0].upper() + word[1:]
             return word, False
         
         elif curr_tags[0] == '$CASE:UPPER':
