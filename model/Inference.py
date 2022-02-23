@@ -158,7 +158,7 @@ class Inference():
         elif curr_tags[0] == '$SPLIT':
             if word.startswith(curr_wrds[0]):
                 k = len(curr_wrds[0])
-                return word + " " + curr_wrds[0][k:], False
+                return word[:k] + " " + word[k:], False
             else:
                 return word, False
             
