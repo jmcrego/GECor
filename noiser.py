@@ -12,6 +12,7 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
     parser.add_argument('--json', help='Noiser config file (required)', required=True)
+    parser.add_argument('--triplet', action='store_true', help='Output triplets: noisy[tab]tags[tab]indexs')
     args = parser.parse_args()
 
     create_logger(None,'info')
@@ -22,8 +23,11 @@ if __name__ == '__main__':
         ids = noiser.tokenizer.get_ids(l)
         words, ids2words, _ = noiser.tokenizer.get_words_ids2words_subwords(ids)
         noisy_words, noisy_tags, noisy_idx2lids = noiser(l, words, ids, ids2words, n+1)
-        noisy_wordstags = [noisy_words[i]+separ+(noisy_tags[i].replace(used,keep)) for i in range(len(noisy_words))]
-        print('{}\t{}'.format(' '.join(noisy_wordstags), noisy_idx2lids))
+        if args.triplet:
+            print("{}\t{}\t{}".format(' '.join(noisy_words),' '.join(noisy_tags),noisy_idx2lids))
+        else:
+            noisy_wordstags = [noisy_words[i]+separ+(noisy_tags[i].replace(used,keep)) for i in range(len(noisy_words))]
+            print('{}\t{}'.format(' '.join(noisy_wordstags), noisy_idx2lids))
     noiser.stats()
         
 
