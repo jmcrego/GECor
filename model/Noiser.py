@@ -200,7 +200,6 @@ class Noiser():
         if self.tokenizer.is_further_tokenized(ids):
             return '', []
         return new_word, ids
-
             
     def do_replace_inflection(self):
         ### replace a random word by any in wrd2wrds_same_lemma[word] if word in vocab, tag the previous as REPLACE:INFLECTION_word

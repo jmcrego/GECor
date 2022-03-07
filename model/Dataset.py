@@ -2,6 +2,7 @@
 
 import sys
 import os
+from unittest import result
 import torch
 from tqdm import tqdm
 import logging
@@ -10,6 +11,8 @@ from collections import defaultdict
 from model.Tokenizer import Tokenizer
 from model.Vocab import Vocab
 from model.Utils import create_logger
+import multiprocessing as mp
+from itertools import chain
 
 separ = '￨'
 
@@ -43,7 +46,7 @@ def pad_listoflists(ll, pad=0, maxl=0):
             
 class Dataset():
 
-    def __init__(self, fname, tags, words, tokenizer, args):
+    def __init__(self, fname, tags, words, tokenizer, args, multiprocessing=False, worker_num=10):
         super(Dataset, self).__init__()
         if not os.path.isfile(fname):
             logging.error('Cannot read file {}'.format(fname))
@@ -58,52 +61,57 @@ class Dataset():
         self.idx_EOS_src = 1 ### </s> in src vocabulary (encoder)
         self.idx_PAD_src = 2 ### <pad> in src vocabulary (encoder)
         self.is_inference = False
+        self.multiprocessing=multiprocessing
+        self.worker_num = worker_num
         self.Data = []
 
-        with open(fname, 'r') as fd:
-            n_filtered = 0
-            for idx, l in enumerate(fd):
-                toks = l.rstrip().split('\t')
-                #example_with_n_predictions = 0
-                if len(toks) == 2: ### training
-                    words = ['<s>']
-                    tags = [self.PAD_tgt]
-                    for wordtag in toks[0].split(): #list of strings
-                        word, tag = wordtag.split(separ)
-                        words.append(word)
-                        tags.append(tag)
-                        #example_with_n_predictions += 1
-                    assert(len(words) == len(tags))
-                    lids = eval(toks[1])
-                    ids2words = [0] #corresponds to <s>
-                    ids = [self.idx_BOS_src]
-                    for i_word in range(len(lids)):
-                        for i in range(len(lids[i_word])):
-                            ids2words.append(i_word+1)
-                            ids.append(lids[i_word][i])
+        if self.multiprocessing:
+            self.Data = self.multiprocess_reading(fname,self.is_inference)
+        else:
+            with open(fname, 'r') as fd:
+                n_filtered = 0
+                for idx, l in enumerate(fd):
+                    toks = l.rstrip().split('\t')
+                    #example_with_n_predictions = 0
+                    if len(toks) == 2: ### training
+                        words = ['<s>']
+                        tags = [self.PAD_tgt]
+                        for wordtag in toks[0].split(): #list of strings
+                            word, tag = wordtag.split(separ)
+                            words.append(word)
+                            tags.append(tag)
+                            #example_with_n_predictions += 1
+                        assert(len(words) == len(tags))
+                        lids = eval(toks[1])
+                        ids2words = [0] #corresponds to <s>
+                        ids = [self.idx_BOS_src]
+                        for i_word in range(len(lids)):
+                            for i in range(len(lids[i_word])):
+                                ids2words.append(i_word+1)
+                                ids.append(lids[i_word][i])
 
-                    words.append('</s>')
-                    tags.append(self.PAD_tgt)
-                    ids.append(self.idx_EOS_src)
-                    ids2words.append(ids2words[-1]+1)
-                    assert(len(ids) == len(ids2words))
-                    # words    : <s>   This is  my  exxample       </s>
-                    # ids      : 0     234  31  67  35 6789        1
-                    # ids2words: 0     1    2   3   4  4           5
-                    # tags     : <PAD> ·    ·   ·   $SPELL_example <PAD>
-                elif len(toks) == 1: ### inference (input is raw text)
-                    self.is_inference = True
-                    ids = self.tokenizer.get_ids(l.rstrip(), add_special_tokens=True)
-                    words, ids2words, _ = self.tokenizer.get_words_ids2words_subwords(ids)
-                    tags = []
-                    
-                if not self.is_inference and self.args.max_length > 0 and len(ids) > self.args.max_length:
-                    n_filtered += 1
-                    continue
+                        words.append('</s>')
+                        tags.append(self.PAD_tgt)
+                        ids.append(self.idx_EOS_src)
+                        ids2words.append(ids2words[-1]+1)
+                        assert(len(ids) == len(ids2words))
+                        # words    : <s>   This is  my  exxample       </s>
+                        # ids      : 0     234  31  67  35 6789        1
+                        # ids2words: 0     1    2   3   4  4           5
+                        # tags     : <PAD> ·    ·   ·   $SPELL_example <PAD>
+                    elif len(toks) == 1: ### inference (input is raw text)
+                        self.is_inference = True
+                        ids = self.tokenizer.get_ids(l.rstrip(), add_special_tokens=True)
+                        words, ids2words, _ = self.tokenizer.get_words_ids2words_subwords(ids)
+                        tags = []
+                        
+                    if not self.is_inference and self.args.max_length > 0 and len(ids) > self.args.max_length:
+                        n_filtered += 1
+                        continue
 
-                self.Data.append({'words':words , 'tags':tags, 'ids':ids, 'ids2words':ids2words, 'idx':idx})
+                    self.Data.append({'words':words , 'tags':tags, 'ids':ids, 'ids2words':ids2words, 'idx':idx})
 
-        logging.info('Read [{}] dataset={} with {} examples [{} filtered]'.format('inference' if self.is_inference else 'learning', fname,len(self.Data),n_filtered))
+            logging.info('Read [{}] dataset={} with {} examples [{} filtered]'.format('inference' if self.is_inference else 'learning', fname, len(self.Data), n_filtered))
 
     def __len__(self):
         return len(self.Data)
@@ -116,6 +124,7 @@ class Dataset():
         self.args.shard_size = self.args.shard_size or len(idx_Data)
         shards = [idx_Data[i:i+self.args.shard_size] for i in range(0, len(idx_Data), self.args.shard_size)] # split dataset in shards
         logging.info('Built {} shards with up to {} examples'.format(len(shards),self.args.shard_size))
+        
         for s,shard in enumerate(shards):
             batchs = self.build_batchs(shard)
             logging.info('Shard {}/{} contains {} batchs'.format(s+1,len(shards),len(batchs)))
@@ -123,8 +132,113 @@ class Dataset():
                 yield self.format_batch(batch)
             logging.info('End of shard {}/{}'.format(s+1,len(shards)))
         logging.info('End of dataset')
+    
+    ### process a line of chunk. Declared outside multiprocess_reading() because of local pickling problem.
+    def process_line(self, line, idx, is_inference):
+        toks = line.rstrip().split('\t')
+        n_filtered = 0
+        is_inference = is_inference
+        #example_with_n_predictions = 0
+        if len(toks) == 2: ### training
+            words = ['<s>']
+            tags = [self.PAD_tgt]
+            for wordtag in toks[0].split(): #list of strings
+                word, tag = wordtag.split(separ)
+                words.append(word)
+                tags.append(tag)
+                #example_with_n_predictions += 1
+            assert(len(words) == len(tags))
+            lids = eval(toks[1])
+            ids2words = [0] #corresponds to <s>
+            ids = [self.idx_BOS_src]
+            for i_word in range(len(lids)):
+                for i in range(len(lids[i_word])):
+                    ids2words.append(i_word+1)
+                    ids.append(lids[i_word][i])
 
-        
+            words.append('</s>')
+            tags.append(self.PAD_tgt)
+            ids.append(self.idx_EOS_src)
+            ids2words.append(ids2words[-1]+1)
+            assert(len(ids) == len(ids2words))
+            # words    : <s>   This is  my  exxample       </s>
+            # ids      : 0     234  31  67  35 6789        1
+            # ids2words: 0     1    2   3   4  4           5
+            # tags     : <PAD> ·    ·   ·   $SPELL_example <PAD>
+        elif len(toks) == 1: ### inference (input is raw text)
+            is_inference = True
+            ids = self.tokenizer.get_ids(line.rstrip(), add_special_tokens=True)
+            words, ids2words, _ = self.tokenizer.get_words_ids2words_subwords(ids)
+            tags = []
+            
+        if not is_inference and self.args.max_length > 0 and len(ids) > self.args.max_length:
+            n_filtered += 1
+            return None, n_filtered, is_inference
+
+        return {'words':words , 'tags':tags, 'ids':ids, 'ids2words':ids2words}, n_filtered, is_inference
+
+    ### process a chunk of input file on one cpu. Declared outside multiprocess_reading() because of local pickling problem.
+    def process_chunk(self, shard_start, shard_end, lines, is_inference):
+        cursor_pos = 0
+        n_filtered = 0
+        is_inference = is_inference
+        results = []
+        for line in lines:
+            item, filtered, is_inference_ = self.process_line(line,cursor_pos,is_inference)
+            if item:
+                results.append(item)
+            n_filtered += filtered
+            is_inference = is_inference and is_inference_
+        logging.info('%d - %d : %d samples, filtered %d examples'%(shard_start, shard_end, len(results), n_filtered))
+        return results, n_filtered, is_inference
+
+    ### Reading input file in parrallel and load it to self.Data
+    def multiprocess_reading(self, file_name, is_inference):
+        ### Multi_process_setup
+        cpu_count_ = min(mp.cpu_count(),self.worker_num) # number of available cpus
+        logging.info("%d cpus are available"%cpu_count_)
+        file_size = os.path.getsize(file_name)
+        chunk_size = file_size // cpu_count_
+        chunk_args = []
+        count = 0  
+                  
+        ### Split original file to many chunks of chunk_size
+        lines = []
+        with open(file_name, 'r') as f:
+            for l in f.readlines():
+                count +=1
+                lines.append(l)
+        shard_start = 0
+        shard_size = count//cpu_count_
+        shard_args = []
+        while shard_start<count:
+            shard_end = min(shard_start+shard_size,count)
+            args = (shard_start, shard_end, lines[shard_start:shard_end], is_inference)
+            shard_args.append(args)
+            shard_start = shard_end
+        ### Set up and launch reading process on each cpu
+        with mp.Pool(cpu_count_) as p:
+            # Run chunks in parallel
+            shard_results = p.starmap(self.process_chunk, shard_args)
+            p.close()
+            p.join()
+            
+        del lines
+        data = []
+        total_n_filtered = 0
+        is_inference = is_inference
+        idx = 0
+        for shard_result in shard_results:
+            items, n_filtered, is_inference_ = shard_result
+            for item in items:
+                item["idx"] = idx
+                idx +=1
+                data.append(item)
+            total_n_filtered += n_filtered
+            is_inference = is_inference and is_inference_
+        logging.info('Read [{}] dataset={} with {} examples [{} filtered]'.format('inference' if is_inference else 'learning', file_name, len(data), total_n_filtered))
+        return data
+
     def build_batchs(self, shard):
         shard_len = [len(self.Data[idx]['ids']) for idx in shard]
         shard = np.asarray(shard)
@@ -146,12 +260,10 @@ class Dataset():
         np.random.shuffle(batchs)
         return batchs
 
-    
     def len_example(self, idx):
         if self.args.batch_type == 'tokens':
             return len(self.Data[idx]['ids']) ### number of subwords
         return 1 ### number of sentences
-
 
     def format_batch(self, idxs):
         batch_words = []
@@ -214,6 +326,7 @@ class Dataset():
             debug_batch(idxs, batch_ids, batch_ids2words, batch_reftags, batch_refwords, self.tokenizer)
         return [batch_ids, batch_ids2words, batch_reftags, batch_refwords]
 
+    
 class Args():
     def __init__(self, batch_size = 2, batch_type = 'sentences', shard_size = 50, max_length = 100):
         self.batch_size = batch_size
