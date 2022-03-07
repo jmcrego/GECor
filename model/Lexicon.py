@@ -4,6 +4,7 @@
 import sys
 import logging
 from collections import defaultdict
+from model.Utils import create_logger
 
 class Lexicon():
     def __init__(self, f, separ='￨'):
@@ -18,6 +19,7 @@ class Lexicon():
         self.wrd2wrds_same_lemma = defaultdict(set)
         self.wrd2wrds_same_pos = defaultdict(set) #only for prep and art
         self.wrd2wrds_homophones = defaultdict(set)
+        self.lemposfeat2wrds = defaultdict(set)
         self.pos = set()
         if 'Lexique383' in f:
             self.read_Lexique383(f)
@@ -37,8 +39,11 @@ class Lexicon():
                 wrd, pho, lem, pos = toks[0], toks[1], toks[2], toks[3]
                 if ' ' in wrd or ' ' in lem or ' ' in pho or ' ' in pos:
                     continue
-                self.add(wrd,lem,pos,pho)
-        logging.info('Read Lexicon={} with {} words {} lemmas {} phones'.format(f,len(self.wrd2lem),len(self.lem2wrd),len(self.pho2wrd)))
+                gen = toks[4]
+                num = toks[5]
+                vrb = toks[10]
+                self.add(wrd,lem,pos,pho,gen=gen,num=num,vrb=vrb)
+            logging.info('Read Lexicon={} with {} words {} lemmas {} phones'.format(f,len(self.wrd2lem),len(self.lem2wrd),len(self.pho2wrd)))
         
     def read_Morphalou31_CSV(self, f):
         with open(f,'r') as fd:
@@ -72,7 +77,8 @@ class Lexicon():
         logging.info('Read Lexicon:{} with {} words {} lemmas {} phones'.format(f,len(self.wrd2lem),len(self.lem2wrd),len(self.pho2wrd)))
 
                 
-    def add(self, wrd, lem, pos, pho, secondpos=''):
+    def add(self, wrd, lem, pos, pho, secondpos='',gen='', num='', vrb=''):
+        logging.info('wrd={} lem={} pos={} pho={} secondpos={} gen={} num={} vrb={}'.format(wrd,lem,pos,pho,secondpos,gen,num,vrb))
         #use same tags as SpaCy for verbs, nouns adjectives and adverbs
         if pos == 'VER' or pos == 'Verbe':
             pos = 'VERB' 
@@ -103,7 +109,63 @@ class Lexicon():
         if len(pho):
             self.pho2wrd[pho].add(wrd)
             self.wrd2pho[wrd].add(pho)
-        
+
+        if len(gen)>0:
+            if gen=='f':
+                gen = 'Gender=Fem'
+            else: #m
+                gen = 'Gender=Masc'
+            self.lemposfeat2wrds[lem+self.separ+pos+self.separ+gen].add(wrd)
+            logging.info("{} ==> {}".format(lem+self.separ+pos+self.separ+gen, wrd))
+            
+        if len(num)>0:
+            if num=='p':
+                num = 'Number=Plur'
+            else: #s
+                num = 'Number=Sing'
+            self.lemposfeat2wrds[lem+self.separ+pos+self.separ+num].add(wrd)
+            logging.info("{} ==> {}".format(lem+self.separ+pos+self.separ+num, wrd))
+
+        vrb = vrb.replace(';',':')
+        for feat in vrb.split(':'):
+            if len(feat)>0:
+                if feat=='ind':
+                    feat = 'Mood=Ind'
+                elif feat=='sub':
+                    feat = 'Mood=Subj'
+                elif feat=='pas':
+                    feat = 'Tense=Past'
+                elif feat=='pre':
+                    feat = 'Tense=Pres'
+                elif feat=='imp':
+                    feat = 'Tense=Imp'
+                elif feat=='fut':
+                    feat = 'Tense=Fut'
+                elif feat=='par':
+                    feat = 'VerbForm=Part'
+                elif feat=='inf':
+                    feat = 'VerbForm=Inf'
+                elif feat=='cnd':
+                    feat = 'VerbForm=Cond'
+                elif feat=='1s':
+                    feat = 'Person=1;Number=Sing'
+                elif feat=='2s':
+                    feat = 'Person=2;Number=Sing'
+                elif feat=='3s':
+                    feat = 'Person=3;Number=Sing'
+                elif feat=='1p':
+                    feat = 'Person=1;Number=Plur'
+                elif feat=='2p':
+                    feat = 'Person=2;Number=Plur'
+                elif feat=='3p':
+                    feat = 'Person=3;Number=Plur'
+                else:
+                    logging.info('feat {}'.format(feat))
+
+                self.lemposfeat2wrds[lem+self.separ+pos+self.separ+feat].add(wrd)
+                logging.info("{} ==> {}".format(lem+self.separ+pos+self.separ+feat, wrd))
+            
+            
     def build_wrd2wrds(self):
         for wrd in self.wrd2lem:
             for lem in self.wrd2lem[wrd]:
@@ -128,8 +190,9 @@ class Lexicon():
         
 if __name__ == '__main__':
 
-                    
-    l = Lexicon('resources/Morphalou3.1_CSV.csv') #'resources/Lexique383.tsv'
+
+    create_logger(None,'info')
+    l = Lexicon('resources/Lexique383.tsv') #'resources/Morphalou3.1_CSV.csv' 'resources/Lexique383.tsv'
     for p in l.pos:
         print(p)
     print('#words: {}'.format(len(l.wrd2lem)))
