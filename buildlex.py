@@ -6,6 +6,10 @@ import logging
 import argparse
 from model.Utils import create_logger
 
+####################
+### Morphalou3.1 ###
+####################
+
 def parseMorphalou31(l,lem=None,pos=None):
     nout = 0
     toks = l.split(';')
@@ -180,8 +184,9 @@ def parseMorphalou31(l,lem=None,pos=None):
         
     return nout, lem, pos
 
-
-
+##################
+### Lexique383 ###
+##################
     
 def parseLexique383(l,n):
     #print(l.rstrip())
@@ -233,6 +238,12 @@ def parseLexique383(l,n):
         pos = 'VER'
     elif pos.startswith('ADJ'):
         pos = 'ADJ'
+    elif pos == 'ART:def':
+        pos = 'ART:DEF'
+    elif pos == 'ART:ind':
+        pos = 'ART:IND'
+    elif pos.startswith('PRO'):
+        pos = pos.upper()
 
 #    if pos == 'LIA' or pos == 'ONO':
 #        logging.info('filtering pos [{}] {}'.format(pos,wrd))
@@ -345,7 +356,7 @@ def parseLexique383(l,n):
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('-i', help='Lexicon file (required)', required=True)
+    parser.add_argument('--i', help='Lexicon file (required)', required=True)
     parser.add_argument('--log_file', type=str, default="stderr", help='Log file (stderr)')
     parser.add_argument('--log_level', type=str, default="info", help='Log level (info)')
     args = parser.parse_args()
