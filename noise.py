@@ -1,5 +1,5 @@
 import sys
-import json
+import jon
 import time
 import spacy
 #from spacy.tokens import Doc
@@ -23,13 +23,13 @@ if __name__ == '__main__':
     parser.add_argument('--pho', type=str, default=None, help='Homophones (pickle) file [required]', required=True)
     parser.add_argument('--lem', type=str, default=None, help='LemRules config file [required]', required=True)
     #
-    parser.add_argument('--voc_errors', type=str, default=None, help='Vocabulary (errors) file (None)')
-    parser.add_argument('--voc_corrs',  type=str, default=None, help='Vocabulary (corrections) file (None)')
-    parser.add_argument('--voc_lfeats', type=str, default=None, help='Vocabulary (features) file (None)')
-    parser.add_argument('--voc_shapes', type=str, default=None, help='Vocabulary (shapes) file (None)')
+    parser.add_argument('--errors', type=str, default=None, help='Error vocabulary (None)')
+    parser.add_argument('--correc',  type=str, default=None, help='Correction vocabulary (None)')
+    parser.add_argument('--lfeats', type=str, default=None, help='Linguistic features vocabulary (None)')
+    parser.add_argument('--shapes', type=str, default=None, help='Shape vocabulary (None)')
     parser.add_argument('--max_n', type=int, default=4, help='Maximum number of noises per sentence (4)')
     parser.add_argument('--max_r', type=float, default=0.3, help='Maximum ratio of noises/words per sentence (0.3)')
-    parser.add_argument('--p_corrs', type=float, default=0.5, help='probability of using cor layer without err (0.5)')
+    parser.add_argument('--p_correc', type=float, default=0.5, help='probability of using cor layer without err (0.5)')
     parser.add_argument('--p_lfeats', type=float, default=0.5, help='probability of using lin layer without err (0.5)')
     #
     parser.add_argument('--w_phon', type=int, default=3, help='Weight of PHON noise [err/cor] (3)')
@@ -54,7 +54,7 @@ if __name__ == '__main__':
         if k.startswith('w_'):
             noises.append([k[2:], v])
     
-    noiser = Noiser(noises,args.lem,args.lex,args.pho,args.voc_errors,args.voc_corrs,args.voc_lfeats,args.voc_shapes,args.max_n,args.max_r,args.p_corrs,args.p_lfeats,args.seed)
+    noiser = Noiser(noises,args.lem,args.lex,args.pho,args.errors,args.correc,args.lfeats,args.shapes,args.max_n,args.max_r,args.p_correc,args.p_lfeats,args.seed)
 
     n_sents = 0
     tic = time.time()

@@ -59,68 +59,73 @@ class CE2(torch.nn.Module):
         self.crossent = nn.CrossEntropyLoss(label_smoothing=label_smoothing,reduction='mean') #only tokens not padded are used to compute loss
         self.beta = beta
 
-    def forward(self, outtag, outcor, msktag, mskcor, reftag, refcor):
-        #loss_tag = self.crossent(outtag[msktag.bool()], reftag[msktag.bool()])
+    def forward(self, outerr, outcor, mskerr, mskcor, referr, refcor):
+        #loss_err = self.crossent(outerr[mskerr.bool()], referr[mskerr.bool()])
         #loss_cor = self.crossent(outcor[mskcor.bool()], refcor[mskcor.bool()])
-        #return loss_tag + self.beta * loss_cor
-        (bs, lt, ts) = outtag.shape
+        #return loss_err + self.beta * loss_cor
+        (bs, lt, ts) = outerr.shape
         (_,  lc, cs) = outcor.shape
-        #logging.info('outtag.shape = {}'.format(outtag.shape)) #[bs, lt, ts]
+        #logging.info('outerr.shape = {}'.format(outerr.shape)) #[bs, lt, ts]
         #logging.info('outcor.shape = {}'.format(outcor.shape)) #[bs, lc, cs]
-        #logging.info('msktag.shape = {}'.format(msktag.shape)) #[bs, lt]
+        #logging.info('mskerr.shape = {}'.format(mskerr.shape)) #[bs, lt]
         #logging.info('mskcor.shape = {}'.format(mskcor.shape)) #[bs, lc, 1]
-        #logging.info('reftag.shape = {}'.format(reftag.shape)) #[bs, lt]
+        #logging.info('referr.shape = {}'.format(referr.shape)) #[bs, lt]
         #logging.info('refcor.shape = {}'.format(refcor.shape)) #[bs, lc, 1]
-        outtag = outtag.reshape(bs*lt,-1) #[bs*lt,ts]
+        outerr = outerr.reshape(bs*lt,-1) #[bs*lt,ts]
         outcor = outcor.reshape(bs*lc,-1) #[bs*lc,cs]
-        msktag = msktag.reshape(bs*lt) #[bs*lt]
+        mskerr = mskerr.reshape(bs*lt) #[bs*lt]
         mskcor = mskcor.reshape(bs*lc) #[bs*lc]
-        reftag = reftag.reshape(bs*lt) #[bs*lt]
+        referr = referr.reshape(bs*lt) #[bs*lt]
         refcor = refcor.reshape(bs*lc) #[bs*lc]
 
-        outtag_mask = outtag[msktag.bool()] #[N,ts]
-        reftag_mask = reftag[msktag.bool()] #[N]
-        loss_tag = self.crossent(outtag_mask, reftag_mask)
-        #logging.info('loss_tag={} : {} out of {} elements'.format(loss_tag.item(), msktag.sum(), torch.numel(msktag)))
+        outerr_mask = outerr[mskerr.bool()] #[N,ts]
+        referr_mask = referr[mskerr.bool()] #[N]
+        loss_err = self.crossent(outerr_mask, referr_mask)
+        #logging.info('loss_err={} : {} out of {} elements'.format(loss_err.item(), mskerr.sum(), torch.numel(mskerr)))
 
         outcor_mask = outcor[mskcor.bool()] #[M,cs]
         refcor_mask = refcor[mskcor.bool()] #[M]
         loss_cor = self.crossent(outcor_mask, refcor_mask) 
         #logging.info('loss_cor={} : {} out of {} elements'.format(loss_cor.item(), mskcor.sum(), torch.numel(mskcor)))
 
-        loss = loss_tag + self.beta * loss_cor
-        logging.debug('CE2 loss: {:.3f} + {:.3f} = {:.3f}'.format(loss_tag.item(),loss_cor.item(),loss.item()))
+        loss = loss_err + self.beta * loss_cor
+        logging.debug('CE2 loss: {:.3f} + {:.3f} = {:.3f}'.format(loss_err.item(),loss_cor.item(),loss.item()))
         return loss    
 
     
 class GECor(nn.Module):
 
-    def __init__(self, tags, cors, encoder_name="flaubert/flaubert_base_cased", aggregation='sum', n_subtokens=1):
+    def __init__(self, err, cor, lin, add, encoder_name="flaubert/flaubert_base_cased", aggregation='sum',addemb_size=0, n_subtokens=0):
         super(GECor, self).__init__() #flaubert_base_cased info in https://huggingface.co/flaubert/flaubert_base_cased/tree/main can be accessed via self.encoder.config.vocab_size
 
-        self.encoder = FlaubertModel.from_pretrained(encoder_name)
-        self.n_tags = len(tags)
-        self.idx_PAD_tag = tags.idx_PAD
-        if cors is None:
-            self.n_cors = self.encoder.config.vocab_size #68729 #https://huggingface.co/flaubert/flaubert_base_cased/tree/main can be accessed via self.encoder.config.vocab_size
-            self.idx_PAD_cor = 2 #"<pad>": 2, read in https://huggingface.co/flaubert/flaubert_base_cased/raw/main/vocab.json
-        else:
-            n_subtokens = 1
-            self.idx_PAD_cor = cors.idx_PAD
-            self.n_cors = len(cors)
+        self.encoder = FlaubertModel.from_pretrained(encoder_name) #Flaubert Encoder
+        self.add_enc = nn.Embedding(len(add), addemb_size) if addemb_size > 0 else None #Encoder of additional input (shapes, inlex)
+        
+        self.idx_PAD_err = err.idx_PAD
+        self.idx_PAD_cor = cor.idx_PAD if cor is not None else None
+        self.idx_PAD_lin = lin.idx_PAD if lin is not None else None
+        self.idx_PAD_COR = 2 #"<pad>": 2, https://huggingface.co/flaubert/flaubert_base_cased/raw/main/vocab.json
+
+        self.n_err = len(err)
+        self.n_cor = len(cor) if cor is not None else None
+        self.n_lin = len(lin) if lin is not None else None
+        self.n_COR = n_subtokens * self.encoder.config.vocab_size #n_subtokens * 68729 #https://huggingface.co/flaubert/flaubert_base_cased/tree/main can be accessed via self.encoder.config.vocab_size
         
         self.aggregation = aggregation
-        self.n_subtokens = n_subtokens            
+        self.n_subtokens = n_subtokens
         self.emb_size = self.encoder.config.emb_dim
-        self.linear_layer_tags = nn.Linear(self.emb_size, self.n_tags)
-        #self.n_linear_layer_cors = nn.ModuleList([nn.Linear(self.emb_size, self.n_cors) for i in range(self.n_subtokens)])
-        self.linear_layer_cors = nn.Linear(self.emb_size, self.n_cors*self.n_subtokens)
+        if addemb_size > 0:
+            self.emb_size += addemb_size
+        self.linear_layer_err = nn.Linear(self.emb_size, self.n_err)
+        self.linear_layer_cor = nn.Linear(self.emb_size, self.n_cor)
+        self.linear_layer_lin = nn.Linear(self.emb_size, self.n_lin)
+        self.linear_layer_COR = nn.Linear(self.emb_size, self.n_COR)
         
-    def forward(self, inputs, indexs):
+    def forward(self, inputs, indexs, add_inputs=None):
         #####################
         ### encoder layer ###
         #####################
-        embeddings = self.encoder(**inputs).last_hidden_state #[bs, l, es]
+        embeddings = self.encoder(**inputs).last_hidden_state #[bs, l, ed]
         if torch.max(indexs) > embeddings.shape[1]-1:
             logging.error('Indexs bad formatted!')
             sys.exit()
@@ -137,22 +142,34 @@ class GECor(nn.Module):
             logging.error('Bad aggregation value: {}'.format(self.aggregation))
             sys.exit()
 
-        ##################
-        ### tags layer ###
-        ##################
-        out_tags = self.linear_layer_tags(embeddings_aggregate) #[bs, l, ts]
+        ##################################################
+        ### embeddings_aggregate + add_enc(add_inputs) ###
+        ##################################################
+        if add_inputs is not None and self.add_enc is not None:
+            embeddings_add =  self.add_enc(add_inputs) #[bs, l, eS]
+            embeddings_aggregate = torch.cat((embeddins_aggregate,embeddings_add), -1) #[bs, l, es+eS]
+            
+        #################
+        ### err layer ###
+        #################
+        out_err = self.linear_layer_err(embeddings_aggregate) #[bs, l, es]
 
-        ####################
-        ### cors layer/s ###
-        ####################
-        #for i in range(len(self.n_linear_layer_cors)): ### i should concat cs rather than building a list
-        #    if i==0:
-        #        out_cors = self.n_linear_layer_cors[i](embeddings_aggregate) #[bs, l, cs]
-        #    else:
-        #        out_cors = torch.cat((out_cors, self.n_linear_layer_cors[i](embeddings_aggregate)), dim=-1) #[bs, l, cs*i] 
-        out_cors = self.linear_layer_cors(embeddings_aggregate) #[bs, l, cs*n_subtokens]
+        #################
+        ### cor layer ###
+        #################
+        out_cor = self.linear_layer_cor(embeddings_aggregate) #[bs, l, cs]
 
-        return out_tags, out_cors
+        #################
+        ### lin layer ###
+        #################
+        out_lin = self.linear_layer_lin(embeddings_aggregate) #[bs, l, ls]
+
+        #################
+        ### COR layer ###
+        #################
+        out_COR = self.linear_layer_COR(embeddings_aggregate) #[bs, l, Cs]
+        
+        return out_err, out_cor, out_lin, out_COR
 
     def parameters(self):
         return super().parameters()    

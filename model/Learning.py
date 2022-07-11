@@ -117,47 +117,47 @@ class Score():
 
 class Learning():
 
-    def __init__(self, model, optim, criter, step, trainset, validset, cors, tags, args, device):
+    def __init__(self, model, optim, criter, step, trainset, validset, err, cor, lin, sha, args, device):
         super(Learning, self).__init__()
         writer = SummaryWriter(log_dir=args.model, comment='', purge_step=None, max_queue=10, flush_secs=60, filename_suffix='') if tensorboard else None
         n_epoch = 0
-        idx_PAD_tag = tags.idx_PAD
-        idx_PAD_cor = cors.idx_PAD if cors is not None else 2 #<pad> in FlaubertTok
+        idx_PAD_err = err.idx_PAD
+        idx_PAD_cor = cor.idx_PAD if cor is not None else 2 #<pad> in FlaubertTok
         optim.zero_grad() # sets gradients to zero
-        score = Score(tags, writer)
+        score = Score(err, writer)
         while True: #repeat epochs
             n_epoch += 1
             logging.info('Epoch {}'.format(n_epoch))
             n_batch = 0
             loss_accum = 0.0
             dsrc = {}
-            for src, agg, tag, cor, _, _ in trainset:
+            for src, agg, err, cor, _, _ in trainset:
                 bs, l = src.shape
                 src = src.to(device) #[bs,l]
                 agg = agg.to(device) #[bs,l]
-                tag = tag.to(device) #[bs,l]
+                err = err.to(device) #[bs,l]
                 cor = cor.to(device) #[bs,l,n_subtokens]
                 model.train()
                 criter.train()
                 dsrc['input_ids'] = src
-                outtag, outcor = model(dsrc, agg) #[bs, l, v_tag], [bs, l, v_cor*n_subtokens] (forward, no log_softmax is applied)
-                assert(outtag.shape[0] == tag.shape[0] and outtag.shape[1] == tag.shape[1])
-                #logging.info('outtag.shape={} tag.shape={}'.format(outtag.shape,tag.shape))
+                outerr, outcor = model(dsrc, agg) #[bs, l, v_err], [bs, l, v_cor*n_subtokens] (forward, no log_softmax is applied)
+                assert(outerr.shape[0] == err.shape[0] and outerr.shape[1] == err.shape[1])
+                #logging.info('outerr.shape={} err.shape={}'.format(outerr.shape,err.shape))
                 if args.n_subtokens > 1:
                     cor = cor.reshape([bs,l*args.n_subtokens])
                     outcor = outcor.reshape([bs,l*args.n_subtokens,-1])
                 assert(outcor.shape[0] == cor.shape[0] and outcor.shape[1] == cor.shape[1])                
                 #logging.info('outcor.shape={} cor.shape={}'.format(outcor.shape,cor.shape))
-                msktag = torch.ones_like(tag).to(device)
+                mskerr = torch.ones_like(err).to(device)
                 mskcor = torch.ones_like(cor).to(device)
-                msktag[tag == idx_PAD_tag] = 0
+                mskerr[err == idx_PAD_err] = 0
                 mskcor[cor == idx_PAD_cor] = 0
-                if msktag.sum() == 0 or mskcor.sum() == 0:
+                if mskerr.sum() == 0 or mskcor.sum() == 0:
                     #logging.warning('Discarded train batch: all tokens padded')
                     continue
                 n_batch += 1
-                loss = criter(outtag, outcor, msktag, mskcor, tag, cor) / float(args.accum_n_batchs) #average of losses in batch (already normalized by tokens in batch) (n batchs will be accumulated before model update, so i normalize by n batchs)
-                score.addPred(outtag, outcor, msktag, mskcor, tag, cor)
+                loss = criter(outerr, outcor, mskerr, mskcor, err, cor) / float(args.accum_n_batchs) #average of losses in batch (already normalized by tokens in batch) (n batchs will be accumulated before model update, so i normalize by n batchs)
+                score.addPred(outerr, outcor, mskerr, mskcor, err, cor)
                 loss.backward()
                 loss_accum += loss
                 #logging.info('loss {:.6f} loss_acum {:.6f}'.format(loss,loss_accum))
@@ -173,27 +173,27 @@ class Learning():
                     ### report ###
                     if args.report_every and step % args.report_every == 0:
                         score.report(step, 'train')
-                        score = Score(tags, writer)
+                        score = Score(errs, writer)
                     ### save ###
                     if args.save_every and step % args.save_every == 0: 
                         save_checkpoint(args.model, model, optim, step, args.keep_last_n)
                     ### validate ###
                     if args.validate_every and step % args.validate_every == 0: 
-                        self.validate(model, criter, step, validset, tags, idx_PAD_tag, idx_PAD_cor, args, writer, device)
+                        self.validate(model, criter, step, validset, tags, idx_PAD_err, idx_PAD_cor, args, writer, device)
                     ### stop by max_steps ###
                     if args.max_steps and step >= args.max_steps: 
-                        self.validate(model, criter, step, validset, tags, idx_PAD_tag, idx_PAD_cor, args, writer, device)
+                        self.validate(model, criter, step, validset, tags, idx_PAD_err, idx_PAD_cor, args, writer, device)
                         save_checkpoint(args.model, model, optim, step, args.keep_last_n)
                         logging.info('Learning STOP by [steps={}]'.format(step))
                         return
             ### stop by max_epochs ###
             if args.max_epochs and n_epoch >= args.max_epochs:
-                self.validate(model, criter, step, validset, tags, idx_PAD_tag, idx_PAD_cor, args, writer, device)
+                self.validate(model, criter, step, validset, tags, idx_PAD_err, idx_PAD_cor, args, writer, device)
                 save_checkpoint(args.model, model, optim, step, args.keep_last_n)
                 logging.info('Learning STOP by [epochs={}]'.format(n_epoch))
                 return
 
-    def validate(self, model, criter, step, validset, tags, idx_PAD_tag, idx_PAD_cor, args, writer, device):
+    def validate(self, model, criter, step, validset, tags, idx_PAD_err, idx_PAD_cor, args, writer, device):
         if validset is None:
             return
         model.eval()
@@ -201,27 +201,27 @@ class Learning():
         score = Score(tags, writer)
         with torch.no_grad():
             dsrc = {}
-            for src, agg, tag, cor, _, _ in validset:
+            for src, agg, err, cor, _, _ in validset:
                 src = src.to(device)
                 agg = agg.to(device)
-                tag = tag.to(device)
+                err = err.to(device)
                 cor = cor.to(device)
                 dsrc['input_ids'] = src
-                outtag, outcor = model(dsrc, agg) ### forward
+                outerr, outcor = model(dsrc, agg) ### forward
                 if args.n_subtokens > 1:
                     bs, l, cs = outcor.shape
                     cor = cor.reshape([bs,l*args.n_subtokens])
                     outcor = outcor.reshape([bs,l*args.n_subtokens,-1])
                 
-                msktag = torch.ones_like(tag).to(tag.device)
+                mskerr = torch.ones_like(err).to(err.device)
                 mskcor = torch.ones_like(cor).to(cor.device)
-                msktag[tag == idx_PAD_tag] = 0
+                mskerr[err == idx_PAD_err] = 0
                 mskcor[cor == idx_PAD_cor] = 0
-                if msktag.sum() == 0 or mskcor.sum() == 0:
+                if mskerr.sum() == 0 or mskcor.sum() == 0:
                     logging.warning('Discarded valid batch: all tokens padded')
                     continue
-                loss = criter(outtag, outcor, msktag, mskcor, tag, cor)
+                loss = criter(outerr, outcor, mskerr, mskcor, err, cor)
                 score.addLoss(loss.item())
-                score.addPred(outtag, outcor, msktag, mskcor, tag, cor)
+                score.addPred(outerr, outcor, mskerr, mskcor, err, cor)
         score.report(step,'valid')
 
