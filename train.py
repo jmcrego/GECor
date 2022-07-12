@@ -22,12 +22,12 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
     parser.add_argument('--model', help='Model file (required)', required=True)
-    parser.add_argument('--train', help='Training data file (required)', required=True)
-    parser.add_argument('--valid', help='Validation data file (required)', required=True)
+    parser.add_argument('--train', help='Training .json file (required)', required=True)
+    parser.add_argument('--valid', help='Validation noised .json file (required)', required=True)
     ### network
     parser.add_argument('--aggreg', type=str, default="max",help='Aggregation when merging embeddings: first, last, max, avg, sum (max)')
-    parser.add_argument('--addinp', type=str, default=None, help='Addeed input vocabulary', required=False)
-    parser.add_argument('--addemb_size', type=int, default=0, help='Embedding size of added input', required=False)
+    parser.add_argument('--shapes', type=str, default=None, help='Shapes vocabulary', required=False)
+    parser.add_argument('--shapes_size', type=int, default=0, help='Shapes embedding size', required=False)
     #
     parser.add_argument('--errors', type=str, default=None, help='Error vocabulary (required)', required=True)
     parser.add_argument('--n_subt', type=int, default=0,    help='Number of correction input subtokens', required=False)
@@ -72,10 +72,10 @@ if __name__ == '__main__':
     err = Vocab(args.errors)
     cor = Vocab(args.correc) if args.correc is not None else None
     lin = Vocab(args.lfeats) if args.lfeats is not None else None
-    add = Vocab(args.addinp) if args.addinp is not None else None
+    sha = Vocab(args.shapes) if args.shapes is not None else None
     flauberttok = FlaubertTok(max_ids_len=MAX_IDS_LEN)
     device = torch.device('cuda' if args.cuda and torch.cuda.is_available() else 'cpu')
-    model = GECor(err, cor, lin, add, encoder_name="flaubert/flaubert_base_cased", aggregation=args.aggreg, addemb_size=args.addemb_size, n_subtokens=args.n_subt).to(device)
+    model = GECor(err, cor, lin, sha, encoder_name="flaubert/flaubert_base_cased", aggregation=args.aggreg, shapes_size=args.shapes_size, n_subtokens=args.n_subt).to(device)
     optim = optim.Adam(model.parameters(), lr=args.lr)
     last_step, model, optim = load_or_create_checkpoint(args.model, model, optim, device)
     
@@ -90,8 +90,8 @@ if __name__ == '__main__':
     #############
     ### learn ###
     #############
-    validset = Dataset(args.valid, err, cor, lin, add, flauberttok, args) if args.valid is not None else None
-    trainset = Dataset(args.train, err, cor, lin, add, flauberttok, args)
+    validset = Dataset(args.valid, err, cor, lin, sha, flauberttok, args) if args.valid is not None else None
+    trainset = Dataset(args.train, err, cor, lin, sha, flauberttok, args)
     learning = Learning(model, optim, criter, last_step, trainset, validset, err, cor, lin, sha, args, device)
     
     toc = time.time()

@@ -95,11 +95,11 @@ class CE2(torch.nn.Module):
     
 class GECor(nn.Module):
 
-    def __init__(self, err, cor, lin, add, encoder_name="flaubert/flaubert_base_cased", aggregation='sum',addemb_size=0, n_subtokens=0):
+    def __init__(self, err, cor, lin, sha, encoder_name="flaubert/flaubert_base_cased", aggregation='sum',shapes_size=0, n_subtokens=0):
         super(GECor, self).__init__() #flaubert_base_cased info in https://huggingface.co/flaubert/flaubert_base_cased/tree/main can be accessed via self.encoder.config.vocab_size
 
         self.encoder = FlaubertModel.from_pretrained(encoder_name) #Flaubert Encoder
-        self.add_enc = nn.Embedding(len(add), addemb_size) if addemb_size > 0 else None #Encoder of additional input (shapes, inlex)
+        self.shapes_encoder = nn.Embedding(len(sha), shapes_size) if shapes_size > 0 and sha is not None else None #Encoder of additional input (shapes, inlex)
         
         self.idx_PAD_err = err.idx_PAD
         self.idx_PAD_cor = cor.idx_PAD if cor is not None else None
@@ -114,14 +114,14 @@ class GECor(nn.Module):
         self.aggregation = aggregation
         self.n_subtokens = n_subtokens
         self.emb_size = self.encoder.config.emb_dim
-        if addemb_size > 0:
-            self.emb_size += addemb_size
+        if shapes_size > 0:
+            self.emb_size += shapes_size
         self.linear_layer_err = nn.Linear(self.emb_size, self.n_err)
         self.linear_layer_cor = nn.Linear(self.emb_size, self.n_cor)
         self.linear_layer_lin = nn.Linear(self.emb_size, self.n_lin)
         self.linear_layer_COR = nn.Linear(self.emb_size, self.n_COR)
         
-    def forward(self, inputs, indexs, add_inputs=None):
+    def forward(self, inputs, indexs, shapes_inputs=None):
         #####################
         ### encoder layer ###
         #####################
@@ -137,17 +137,17 @@ class GECor(nn.Module):
             embeddings_aggregate = torch.zeros_like(embeddings, dtype=embeddings.dtype, device=embeddings.device)
             torch_scatter.segment_coo(embeddings, indexs, out=embeddings_aggregate, reduce=self.aggregation)
         elif self.aggregation in ['first','last']:
-            embeddings_aggregate = embeddings
+            embeddings_aggregate = embeddings #not finished!!!
         else:
             logging.error('Bad aggregation value: {}'.format(self.aggregation))
             sys.exit()
 
         ##################################################
-        ### embeddings_aggregate + add_enc(add_inputs) ###
+        ### embeddings_aggregate + shapes_encoder(shapes_inputs) ###
         ##################################################
-        if add_inputs is not None and self.add_enc is not None:
-            embeddings_add =  self.add_enc(add_inputs) #[bs, l, eS]
-            embeddings_aggregate = torch.cat((embeddins_aggregate,embeddings_add), -1) #[bs, l, es+eS]
+        if shapes_inputs is not None and self.shapes_encoder is not None:
+            embeddings_shapes =  self.shapes_encoder(shapes_inputs) #[bs, l, eS]
+            embeddings_aggregate = torch.cat((embeddins_aggregate,embeddings_shapes), -1) #[bs, l, es+eS]
             
         #################
         ### err layer ###
