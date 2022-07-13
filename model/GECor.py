@@ -109,7 +109,7 @@ class GECor(nn.Module):
         self.n_err = len(err)
         self.n_cor = len(cor) if cor is not None else None
         self.n_lin = len(lin) if lin is not None else None
-        self.n_COR = n_subtokens * self.encoder.config.vocab_size #n_subtokens * 68729 #https://huggingface.co/flaubert/flaubert_base_cased/tree/main can be accessed via self.encoder.config.vocab_size
+        self.n_COR = n_subtokens * self.encoder.config.vocab_size if n_subtokens > 0 else None #n_subtokens * 68729 #https://huggingface.co/flaubert/flaubert_base_cased/tree/main can be accessed via self.encoder.config.vocab_size
         
         self.aggregation = aggregation
         self.n_subtokens = n_subtokens
@@ -117,9 +117,9 @@ class GECor(nn.Module):
         if shapes_size > 0:
             self.emb_size += shapes_size
         self.linear_layer_err = nn.Linear(self.emb_size, self.n_err)
-        self.linear_layer_cor = nn.Linear(self.emb_size, self.n_cor)
-        self.linear_layer_lin = nn.Linear(self.emb_size, self.n_lin)
-        self.linear_layer_COR = nn.Linear(self.emb_size, self.n_COR)
+        self.linear_layer_cor = nn.Linear(self.emb_size, self.n_cor) if self.n_cor is not None else None
+        self.linear_layer_lin = nn.Linear(self.emb_size, self.n_lin) if self.n_lin is not None else None
+        self.linear_layer_COR = nn.Linear(self.emb_size, self.n_COR) if self.n_COR is not None else None
         
     def forward(self, inputs, indexs, shapes_inputs=None):
         #####################
@@ -149,25 +149,13 @@ class GECor(nn.Module):
             embeddings_shapes =  self.shapes_encoder(shapes_inputs) #[bs, l, eS]
             embeddings_aggregate = torch.cat((embeddins_aggregate,embeddings_shapes), -1) #[bs, l, es+eS]
             
-        #################
-        ### err layer ###
-        #################
+        ##################
+        ### out layers ###
+        ##################
         out_err = self.linear_layer_err(embeddings_aggregate) #[bs, l, es]
-
-        #################
-        ### cor layer ###
-        #################
-        out_cor = self.linear_layer_cor(embeddings_aggregate) #[bs, l, cs]
-
-        #################
-        ### lin layer ###
-        #################
-        out_lin = self.linear_layer_lin(embeddings_aggregate) #[bs, l, ls]
-
-        #################
-        ### COR layer ###
-        #################
-        out_COR = self.linear_layer_COR(embeddings_aggregate) #[bs, l, Cs]
+        out_cor = self.linear_layer_cor(embeddings_aggregate) if self.linear_layer_cor is not None else None #[bs, l, cs]
+        out_lin = self.linear_layer_lin(embeddings_aggregate) if self.linear_layer_lin is not None else None #[bs, l, ls]
+        out_COR = self.linear_layer_COR(embeddings_aggregate) if self.linear_layer_COR is not None else None #[bs, l, Cs]
         
         return out_err, out_cor, out_lin, out_COR
 

@@ -16,7 +16,7 @@ if __name__ == '__main__':
     parser.add_argument('-o',   type=str, default=None, help='Output file [required]', required=True)
     parser.add_argument('-m',   type=str, default="fr_core_news_md", help='Spacy model name (fr_core_news_md)')
     parser.add_argument('-b',   type=int, default=1000, help='Batch size (1000)')
-    parser.add_argument('--inlex_with_shape', action='store_true', help='add inlex info to shape tags (False)')
+    parser.add_argument('--inlex_with_shapes', action='store_true', help='add inlex info to shape tags (False)')
     parser.add_argument('-log', type=str, default="info", help='Logging level [critical, error, warning, info, debug] (info)')
     args = parser.parse_args()
     if len(args.file) == 0:
@@ -38,7 +38,7 @@ if __name__ == '__main__':
                 if d['r'].isnumeric() or '‗' in d['r']:
                     continue
                 words[d['r']] += 1
-                inlex = str('t' in d and d['t'] != "")+'\t' if args.inlex_with_shape else ''
+                inlex = str('t' in d and d['t'] != "")+'\t' if args.inlex_with_shapes else ''
                 shapes[inlex+d['s']] += 1
         nlines += 1
     toc = time.time()
