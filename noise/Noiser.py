@@ -46,6 +46,7 @@ class Noiser():
         self.n_tokens += len(self.s)
         n_noises_sentence = 0
         n_noises_toinject = random.randint(0, min(self.max_noises, int(len(self.s)*self.max_ratio)))
+        logging.debug("BEFORE: {}".format([d['r'] for d in ldict]))
         for _ in range(n_noises_toinject*2): ### try this maximum number of times before stopping
             if n_noises_sentence >= n_noises_toinject:
                 break
@@ -76,6 +77,7 @@ class Noiser():
             elif noise == 'case': ### change case of current word and add $CASE1/$CASEn
                 n_noises_sentence += self.inject_case(idx)
         self.n_sents_with_n_noises[n_noises_sentence] += 1
+        logging.debug("AFTER : {}".format([d['r'] for d in ldict]))
         #remove all p and plm from words
 #        for i in range(len(self.s)):
 #            if 'plm' in self.s[i]: #not used anymore
@@ -105,7 +107,7 @@ class Noiser():
 
 
     def buildE(self, err):
-        E = err
+        E = str(err)
         iE = int(self.vocab_err[err]) if self.vocab_err is not None else None
         return E, iE
 
