@@ -12,20 +12,20 @@ from collections import defaultdict
 from model.Vocab import Vocab
 from utils.Utils import create_logger, SEPAR1, SEPAR2, KEEP
 
-def debug_batch(idxs, batch_raw, batch_ids_src, batch_ids_agg, batch_ids_tag, batch_ids_cor):
-    logging.debug('Batch {}'.format(idxs))
-    src = batch_ids_src.tolist()
-    agg = batch_ids_agg.tolist()
-    tag = batch_ids_tag.tolist()
-    cor = batch_ids_cor.tolist()
-    for k in range(len(idxs)):
-        logging.debug("{} raw: {}".format(idxs[k], batch_raw[k]))
-        logging.debug("{} src [{}]: {}".format(idxs[k], len(src[k]), src[k]))
-        logging.debug("{} agg [{}]: {}".format(idxs[k], len(agg[k]), agg[k]))
-        logging.debug("{} tag [{}]: {}".format(idxs[k], len(tag[k]), tag[k]))
-        logging.debug("{} cor [{}]: {}".format(idxs[k], len(cor[k]), cor[k]))
+#def debug_batch(idxs, batch_raw, batch_ids_src, batch_ids_agg, batch_ids_err, batch_ids_lin, batch_ids_cor, batch_ids_COR):
+#    logging.debug('Batch {}'.format(idxs))
+#    src = batch_ids_src.tolist()
+#    agg = batch_ids_agg.tolist()
+#    err = batch_ids_err.tolist()
+#    cor = batch_ids_cor.tolist()
+#    for k in range(len(idxs)):
+#        logging.debug("{} raw: {}".format(idxs[k], batch_raw[k]))
+#        logging.debug("{} src [{}]: {}".format(idxs[k], len(src[k]), src[k]))
+#        logging.debug("{} agg [{}]: {}".format(idxs[k], len(agg[k]), agg[k]))
+#        logging.debug("{} err [{}]: {}".format(idxs[k], len(err[k]), err[k]))
+#        logging.debug("{} cor [{}]: {}".format(idxs[k], len(cor[k]), cor[k]))
 
-def pad_listoflists(ll, pad=0, maxl=0, n_subtokens=1):
+def pad_listoflists(ll, pad=0, maxl=0, n_subt=1):
     #logging.info('maxl: {}'.format(maxl))
     if maxl==0:
         maxl = max([len(l) for l in ll])
@@ -43,163 +43,163 @@ def pad_listoflists(ll, pad=0, maxl=0, n_subtokens=1):
     return torch.Tensor(ll).to(dtype=torch.long) ### convert to tensor
             
 class Dataset():
-
-    def __init__(self, fname, tags, cors, token, args):
+    def __init__(self, fname, err, cor, lin, sha, flauberttok, noiser, args):
         super(Dataset, self).__init__()
         if not os.path.isfile(fname):
             logging.error('Cannot read file {}'.format(fname))
             sys.exit()
-        self.tags = tags
-        self.cors = cors #may be None
-        self.token = token
+        self.err = err
+        self.cor = cor #may be None
+        self.lin = lin #may be None
+        self.sha = sha #may be None
+        #self.flauberttok = flauberttok
         #self.noiser = noiser
         self.args = args
         #
-        self.idx_BOS_src = token.idx_BOS # <s> in encoder
-        self.idx_EOS_src = token.idx_EOS # </s> in encoder
-        self.idx_PAD_src = token.idx_PAD # <pad> in encoder
+        self.idx_BOS_src = flauberttok.idx_BOS # <s> in encoder
+        self.idx_EOS_src = flauberttok.idx_EOS # </s> in encoder
+        self.idx_PAD_src = flauberttok.idx_PAD # <pad> in encoder
         #
-        self.str_BOS_src = token.str_BOS # <s> in encoder
-        self.str_EOS_src = token.str_EOS # </s> in encoder
-        self.str_PAD_src = token.str_PAD # <pad> in encoder
+        self.str_BOS_src = flauberttok.str_BOS # <s> in encoder
+        self.str_EOS_src = flauberttok.str_EOS # </s> in encoder
+        self.str_PAD_src = flauberttok.str_PAD # <pad> in encoder
         #
-        self.idx_PAD_tag = tags.idx_PAD # <pad> in tag vocabulary
+        self.idx_PAD_err = err.idx_PAD # <pad> in err vocabulary
         #
-        self.idx_PAD_cor = cors.idx_PAD if cors is not None else token.idx_PAD # <pad> in cor vocabulary 
+        self.idx_PAD_cor = cor.idx_PAD if cor is not None else None #<pad> in cor vocabulary 
+        self.idx_PAD_lin = lin.idx_PAD if lin is not None else None #<pad> in lin vocabulary 
+        self.idx_PAD_COR = 2 #"<pad>": 2, https://huggingface.co/flaubert/flaubert_base_cased/raw/main/vocab.json
+        n_truncated = 0
+        n_filtered = 0
         self.Data = []
         with open(fname, 'r') as fd:
-            n_filtered = 0
-            for idx, l in enumerate(fd):
-                ldict = json.loads(l)
-                ldict.insert(0,{'r':self.str_BOS_src, 's':'s', 'l':'', 'i':[self.idx_BOS_src], 'T':self.idx_PAD_tag, 'C':self.idx_PAD_cor})
-                ldict.append(  {'r':self.str_EOS_src, 's':'s', 'l':'', 'i':[self.idx_EOS_src], 'T':self.idx_PAD_tag, 'C':self.idx_PAD_cor})
-                #ldict = noiser.noise(json.loads(l)) #list of words (dicts) with noise injected
-                #print(ldict)
-                self.Data.append({'idx':idx, 'ldict':ldict})
-        logging.info('Read {} examples from {}'.format(len(self.Data),fname))
-        sys.exit()
+            idx = 0
+            for l in fd:
+                ### inject noise ###
+                ldict = noiser(json.loads(l))
+                ### truncate if long ###
+                if self.args.max_length > 0 and len(ldict) > self.args.max_length:
+                    n_truncated += 1
+                    ldict = ldict[:self.args.max_length]
+                ### filter if empty ###
+                if len(ldict) == 0:
+                    n_filtered += 1
+                    logging.warning('line {} filtered'.format(idx))
+                    continue
+                ### format sentence ###
+                ids_src, str_src, ids_err, ids_cor, ids_lin, ids_COR, ids_agg = self.format_sentence(ldict,idx)
+                ### keep record ###
+                self.Data.append({'idx':idx, 'ldict':ldict, 'ids_src':ids_src, 'str_src':str_src, 'ids_err':ids_err, 'ids_cor':ids_cor, 'ids_lin':ids_lin, 'ids_COR':ids_COR, 'ids_agg':ids_agg})
+                idx += 1
+        logging.info('Read {} examples from {} [{} filtered, {} truncated]'.format(len(self.Data),fname,n_filtered,n_truncated))
         
-        self.n_truncated = 0
-        self.n_filtered = 0
-        self.n_remaining = 0
-        for idx in range(len(self.Data)):
-            if 'ids_src' in self.Data[idx]: ### already parsed
-                continue
-            tokens = self.Data[idx]['raw'].split() ### data MUST be already splitted into tokens, ex: #Son￤593￤$SWAP ... rendu￤1556￤$PHONE￤rendue￤4072 
-            if self.args.max_length > 0 and len(tokens) > self.args.max_length:
-                self.n_truncated += 1
-                tokens = tokens[:self.args.max_length]
-            if len(tokens) == 0:
-                self.n_filtered += 1
-                self.Data[idx]['ids_src'] = []
-                logging.warning('filtered {} line'.format(idx))
-                continue
-            self.n_remaining += 1
-            ids_src, ids_tag, ids_cor, ids_agg, str_src = self.format_sentence(tokens)
-            self.Data[idx]['ids_src'] = ids_src
-            self.Data[idx]['ids_tag'] = ids_tag
-            self.Data[idx]['ids_cor'] = ids_cor
-            self.Data[idx]['ids_agg'] = ids_agg
-            self.Data[idx]['str_src'] = str_src
-        logging.info('Parsed dataset [filtered={}, truncated={}, remain={}]'.format(self.n_filtered, self.n_truncated, self.n_remaining))
-
-    def format_sentence(self, tokens):
+    def format_sentence(self, ldict, idx):
+        ltoks = []
+        lerrors = []
+        lcorrs = []
+        llins = []
         #
-        ### AGGREGATE (sum,avg,max)
         str_src = [] # <s>   This  is    my    exxample  </s>
-        ids_src = [] # 0     234   31    67    35  678   1     (0:<s>, 1:</s>)
-        ids_agg = [] # 0     1     2     3     4   4     5     (indicates to which tok is aligned each subtoken)
-        ids_tag = [] # 0     1     1     1     4         0     (0:<PAD>, 1:$KEEP, 4:$SPELL)
-        ids_cor = [] # [0,0] [0,0] [0,0] [0,0] [3245,4]  [0,0] (0:<PAD>, 3245:example, when n_subtokens=2)
-        #
-        ### GECTOR (first,last)
-        str_src = [] # <s>   This  is    my    exxxample   </s>
-        ids_src = [] # 0     234   31    67    35    678   1     (0:<s>, 1:</s>)
-        ids_agg = [] # 0     1     2     3     4     4     5     (indicates to which tok is aligned each subtoken) ### used for inference
-        ids_tag = [] # 0     1     1     1     4     0     0     (0:<PAD>, 1:$KEEP, 4:$SPELL)
-        ids_cor = [] # [0,0] [0,0] [0,0] [0,0] [7,0] [0,0] [0,0] (0:<PAD>, 3245:example, when n_subtokens=2)
+        ids_src = [] # 0     234   31    67    35   678  1     (0:<s>, 1:</s>)
+        ids_agg = [] # 0     1     2     3     4    4    5     (indicates to which tok is aligned each subtoken) ### used for inference
+        ids_err = [] # 0     1     1     1     4         0     (0:<PAD>, 1:$KEEP, 4:$SPELL)
+        ids_cor = [] # 0     0     0     0     624       0     (0:<PAD>, 624:example)
+        ids_lin = [] # 0     0     3     0     0         0     (0:<PAD>, 3:pres_ind_3ps)
+        ids_COR = [] # [0,0] [0,0] [0,0] [0,0] [347,0]   [0,0] (0:<PAD>, [347,0]:example, when n_subt=2)
         #
         str_src.append('<s>')
         ids_src.append(self.idx_BOS_src)
         ids_agg.append(0)
-        ids_tag.append(self.idx_PAD_tag)
-        ids_cor.append([self.idx_PAD_cor]*self.args.n_subtokens)
-        for i,tok in enumerate(tokens):
-            fields = tok.split(SEPAR1)
-            #7 fields: Suivent￤12581～1558￤Aa￤True￤$KEEP￤Suivent￤26743
-            #5 fields: versets￤35110￤a￤True￤$KEEP
-            n_subtok = len(fields[1].split(SEPAR2))
+        ids_err.append(self.idx_PAD_err)
+        ids_cor.append(self.idx_PAD_cor)
+        ids_lin.append(self.idx_PAD_lin)
+        ids_COR.append([self.idx_PAD_COR]*self.args.n_subt)
+        for i,dtok in enumerate(ldict):
+            str_src.append(dtok['r'])
+            n_subtok = len(dtok['i'])
+            ids_src += dtok['i']
             ids_agg += [i+1]*n_subtok #ex: [1,1]
-            str_src += [fields[0]] #Suivent
-            ids_src += self.build_ids_src(fields[1]) #[12581,1558]
-            assert(len(ids_src) == len(ids_agg))
-            if self.args.aggregation in ['max', 'avg', 'sum']:
-                ids_tag += self.build_tag_aggregate(fields[4])
-                ids_cor += self.build_cor_aggregate(fields[6]) if len(fields) == 7 else [[self.idx_PAD_cor]*self.args.n_subtokens]
-                assert(len(ids_cor) == len(ids_tag))
-            elif self.args.aggregation in ['first', 'last']: ### gector-like
-                ids_tag += self.build_tag_gector(fields[4],n_subtok)
-                ids_cor += self.build_cor_gector(fields,n_subtok)
-                assert(len(ids_src) == len(ids_tag))
-                assert(len(ids_src) == len(ids_cor))
-            else:
-                logging.error('Bad aggregation option')
-                sys.exit()                
+            ids_err.append(dtok['iE'] if 'iE' in dtok else self.idx_PAD_err)
+            ids_cor.append(dtok['iC'] if 'iC' in dtok else self.idx_PAD_cor)
+            ids_lin.append(dtok['iL'] if 'iL' in dtok else self.idx_PAD_lin)
+            ids_COR.append(dtok['iCC'] if 'iCC' in dtok else [self.idx_PAD_COR]*self.args.n_subt) ### idx_PAD_COR indicates nothing to predict
+            if len(ids_COR[-1]) < self.args.n_subt:
+                ids_COR[-1] += [4]* (self.args.n_subt - len(ids_COR[-1])) ### 4 corresponds to flaubert model token: <special0> that must be predicted (while <pad> indicates nothing to predict)
+            elif len(ids_COR[-1]) > self.args.n_subt:
+                ids_COR[-1] = ids_COR[-1][:self.args.n_subt] ### must be exactly n_subt tokens
+            ### for debug purpose
+            if ids_err[-1] != self.idx_PAD_err:
+                ltoks.append(dtok['r'])
+                lerrors.append(self.err[ids_err[-1]])
+            if ids_cor[-1] != self.idx_PAD_cor:
+                lcorrs.append(self.cor[ids_cor[-1]])
+            if ids_lin[-1] != self.idx_PAD_lin:
+                llins.append(self.lin[ids_lin[-1]])
+            ###
         str_src.append('</s>')
         ids_src.append(self.idx_EOS_src)
-        ids_tag.append(self.idx_PAD_tag)
-        ids_cor.append([self.idx_PAD_cor]*self.args.n_subtokens)
         ids_agg.append(ids_agg[-1]+1)
-        return ids_src, ids_tag, ids_cor, ids_agg, str_src
+        ids_err.append(self.idx_PAD_err)
+        ids_cor.append(self.idx_PAD_cor)
+        ids_lin.append(self.idx_PAD_lin)
+        ids_COR.append([self.idx_PAD_COR]*self.args.n_subt)
+        assert(len(ids_src) == len(ids_agg))
+        assert(len(str_src) == len(ids_err))
+        assert(len(str_src) == len(ids_cor))
+        assert(len(str_src) == len(ids_lin))
+        assert(len(str_src) == len(ids_COR))
+        logging.debug('idx {}'.format(idx))
+        logging.debug('ids_src {}'.format(ids_src))
+        logging.debug('ids_agg {}'.format(ids_agg))
+        logging.debug('str_src {}\t{}'.format(str_src, '\t'.join(ltoks)))
+        logging.debug('ids_err {}\t{}'.format(ids_err, '\t'.join(lerrors)))
+        logging.debug('ids_cor {}\t{}'.format(ids_cor, '\t'.join(lcorrs)))
+        logging.debug('ids_lin {}\t{}'.format(ids_lin, '\t'.join(llins)))
+        logging.debug('ids_COR {}'.format(ids_COR))
+        return ids_src, str_src, ids_err, ids_cor, ids_lin, ids_COR, ids_agg
 
-    def build_ids_src(self,field_ids):
-        return list(map(int,field_ids.split(SEPAR2)))
-
-    def build_tag_aggregate(self, field_tag):
-        return [self.tags[field_tag]]
-        
     def build_cor_aggregate(self, field_cor):
         myids_cor = list(map(int,field_cor.split(SEPAR2)))
-        if len(myids_cor) < self.args.n_subtokens:
-            myids_cor += [4]*(self.args.n_subtokens-len(myids_cor)) #4 corresponds to flaubert model token: <special0> that must be predicted (PAD is not)
-        elif len(myids_cor) > self.args.n_subtokens:
-            myids_cor = myids_cor[:self.args.n_subtokens] #truncation... problem if the right word (using n subtokens) cannot be produced
+        if len(myids_cor) < self.args.n_subt:
+            myids_cor += [4]*(self.args.n_subt-len(myids_cor)) #4 corresponds to flaubert model token: <special0> that must be predicted (PAD is not)
+        elif len(myids_cor) > self.args.n_subt:
+            myids_cor = myids_cor[:self.args.n_subt] #truncation... problem if the right word (using n subtokens) cannot be produced
         return [myids_cor]
             
-    def build_tag_gector(self,field_tag,l):
-        myids_tag = self.tags[field_tag]
-        ltag = [self.idx_PAD_tag] * l
-        if self.args.aggregation == 'first':
-            ltag[0] = myids_tag
+    def build_err_gector(self,field_err,l):
+        myids_err = self.err[field_err]
+        lerr = [self.idx_PAD_err] * l
+        if self.args.aggreg == 'first':
+            lerr[0] = myids_err
         else:
-            ltag[-1] = myids_tag
-        return ltag
+            lerr[-1] = myids_err
+        return lerr
         
     def build_cor_gector(self,fields,n_subtok):
         ### n_subtok is the number of subtokens of current source words
-        ### self.args.n_subtokens is the number of subtokens to be predicted as correction
+        ### self.args.n_subt is the number of subtokens to be predicted as correction
         if len(fields)<7:
-            myids_cor = [self.idx_PAD_cor]*self.args.n_subtokens
+            myids_cor = [self.idx_PAD_cor]*self.args.n_subt
         else:
             myids_cor = list(map(int,fields[6].split(SEPAR2)))
             
-        if len(myids_cor) < self.args.n_subtokens:
-            myids_cor += [4]*(self.args.n_subtokens-len(myids_cor)) #4 corresponds to flaubert model token: <special0> that must be predicted (PAD is not)
-        elif len(myids_cor) > self.args.n_subtokens:
-            myids_cor = myids_cor[:self.args.n_subtokens]
+        if len(myids_cor) < self.args.n_subt:
+            myids_cor += [4]*(self.args.n_subt-len(myids_cor)) #4 corresponds to flaubert model token: <special0> that must be predicted (PAD is not)
+        elif len(myids_cor) > self.args.n_subt:
+            myids_cor = myids_cor[:self.args.n_subt]
 
-        pad_cor = [self.idx_PAD_cor] * self.args.n_subtokens ### a word correction is formed of n_subtoken <pad>'s
+        pad_cor = [self.idx_PAD_cor] * self.args.n_subt ### a word correction is formed of n_subtoken <pad>'s
         lcor = [pad_cor] * n_subtok ### initially all subtokens of current word are padded
         ### exx   ample
         ### [0,0] [0,0]
-        if self.args.aggregation == 'first':
+        if self.args.aggreg == 'first':
             lcor[0] = myids_cor
             ### exx   ample  #n_subtok=2
-            ### [15,0] [0,0] #when n_subtokens=1 (aggregation is first)
+            ### [15,0] [0,0] #when n_subt=1 (aggreg is first)
         else:
             lcor[-1] = myids_cor
             ### exx   ample  #n_subtok=2
-            ### [0,0] [15,0] #when n_subtokens=1 (aggregation is last)
+            ### [0,0] [15,0] #when n_subt=1 (aggreg is last)
         return lcor
     
     def __len__(self):
@@ -254,7 +254,7 @@ class Dataset():
         batch_str_src = []
         batch_ids_src = []
         batch_ids_agg = []
-        batch_ids_tag = []
+        batch_ids_err = []
         batch_ids_cor = []
         maxl = 0
         for idx in idxs:
@@ -267,17 +267,17 @@ class Dataset():
             batch_str_src.append(self.Data[idx]['str_src'])
             batch_ids_src.append(self.Data[idx]['ids_src'])
             batch_ids_agg.append(self.Data[idx]['ids_agg'])
-            batch_ids_tag.append(self.Data[idx]['ids_tag'])
+            batch_ids_err.append(self.Data[idx]['ids_err'])
             batch_ids_cor.append(self.Data[idx]['ids_cor'])
         ### convert to tensor
         batch_ids_src = pad_listoflists(batch_ids_src,pad=self.idx_PAD_src,maxl=maxl)
         batch_ids_agg = pad_listoflists(batch_ids_agg,pad=-1,maxl=maxl)
-        #if ids_tag/ids_cor are smaller than ids_src/ids_agg i add PAD so as to obtain the same size
-        batch_ids_tag = pad_listoflists(batch_ids_tag,pad=self.idx_PAD_tag,maxl=maxl)
-        batch_ids_cor = pad_listoflists(batch_ids_cor,pad=[self.idx_PAD_cor]*self.args.n_subtokens,maxl=maxl,n_subtokens=self.args.n_subtokens)
-        if self.args.log == 'debug':
-            debug_batch(idxs, batch_raw, batch_ids_src, batch_ids_agg, batch_ids_tag, batch_ids_cor)
-        return [batch_ids_src, batch_ids_agg, batch_ids_tag, batch_ids_cor, idxs, batch_str_src]
+        #if ids_err/ids_cor are smaller than ids_src/ids_agg i add PAD so as to obtain the same size
+        batch_ids_err = pad_listoflists(batch_ids_err,pad=self.idx_PAD_err,maxl=maxl)
+        batch_ids_cor = pad_listoflists(batch_ids_cor,pad=[self.idx_PAD_cor]*self.args.n_subt,maxl=maxl,n_subt=self.args.n_subt)
+#        if self.args.log == 'debug':
+#            debug_batch(idxs, batch_raw, batch_ids_src, batch_ids_agg, batch_ids_err, batch_ids_cor)
+        return [batch_ids_src, batch_ids_agg, batch_ids_err, batch_ids_cor, idxs, batch_str_src]
 
     
     def reformat_batch(self, batch):
@@ -286,8 +286,8 @@ class Dataset():
         batch_ids2words = []
         maxl_ids = 0
         for i in range(len(batch)):
-            ids = self.token.ids(batch[i], add_special_tokens=True, is_split_into_words=False)
-            words, ids2words, _, _ = self.token.words_ids2words_subwords_lids(ids)
+            ids = self.flauberttok.ids(batch[i], add_special_tokens=True, is_split_into_words=False)
+            words, ids2words, _, _ = self.flauberttok.words_ids2words_subwords_lids(ids)
             #logging.debug('reformat {}'.format(batch[i]))
             #logging.debug('words {}'.format(words))
             #logging.debug('ids {}'.format(ids))
@@ -299,3 +299,5 @@ class Dataset():
         batch_ids = pad_listoflists(batch_ids, pad=self.idx_PAD_src, maxl=maxl_ids)
         batch_ids2words = pad_listoflists(batch_ids2words, pad=-1, maxl=maxl_ids)
         return [batch_ids, batch_ids2words, batch_words]
+
+
