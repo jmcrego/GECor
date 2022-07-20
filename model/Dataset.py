@@ -2,16 +2,14 @@
 
 import sys
 import os
-#from unittest import result
 import torch
-#from tqdm import tqdm
 import json
 import logging
 import numpy as np
 from collections import defaultdict
 from model.Vocab import Vocab
-from utils.Utils import create_logger, SEPAR1, SEPAR2, KEEP
-
+from utils.Utils import create_logger, SEPAR1, SEPAR2, KEEP, conll
+    
 #def debug_batch(idxs, batch_raw, batch_ids_src, batch_ids_agg, batch_ids_err, batch_ids_lin, batch_ids_cor, batch_ids_COR):
 #    logging.debug('Batch {}'.format(idxs))
 #    src = batch_ids_src.tolist()
@@ -69,14 +67,19 @@ class Dataset():
         self.idx_PAD_cor = cor.idx_PAD if cor is not None else None #<pad> in cor vocabulary 
         self.idx_PAD_lin = lin.idx_PAD if lin is not None else None #<pad> in lin vocabulary 
         self.idx_PAD_COR = 2 #"<pad>": 2, https://huggingface.co/flaubert/flaubert_base_cased/raw/main/vocab.json
+        self.idx_PAD_sha = sha.idx_PAD if sha is not None else None #<pad> in sha vocabulary 
         n_truncated = 0
         n_filtered = 0
         self.Data = []
         with open(fname, 'r') as fd:
             idx = 0
             for l in fd:
+                ldict = json.loads(l)
+                logging.debug("RAW({}): \n{}".format(idx,conll(ldict)))
                 ### inject noise ###
-                ldict = noiser(json.loads(l))
+                if noiser is not None:
+                    ldict = noiser(ldict)
+                    logging.debug("NOISY({}): \n{}".format(idx,conll(ldict)))
                 ### truncate if long ###
                 if self.args.max_length > 0 and len(ldict) > self.args.max_length:
                     n_truncated += 1
@@ -87,9 +90,9 @@ class Dataset():
                     logging.warning('line {} filtered'.format(idx))
                     continue
                 ### format sentence ###
-                ids_src, str_src, ids_err, ids_cor, ids_lin, ids_COR, ids_agg = self.format_sentence(ldict,idx)
+                ids_src, str_src, ids_err, ids_cor, ids_lin, ids_COR, ids_sha, ids_agg = self.format_sentence(ldict,idx)
                 ### keep record ###
-                self.Data.append({'idx':idx, 'ldict':ldict, 'ids_src':ids_src, 'str_src':str_src, 'ids_err':ids_err, 'ids_cor':ids_cor, 'ids_lin':ids_lin, 'ids_COR':ids_COR, 'ids_agg':ids_agg})
+                self.Data.append({'idx':idx, 'ldict':ldict, 'ids_src':ids_src, 'str_src':str_src, 'ids_err':ids_err, 'ids_cor':ids_cor, 'ids_lin':ids_lin, 'ids_COR':ids_COR, 'ids_sha':ids_sha, 'ids_agg':ids_agg})
                 idx += 1
         logging.info('Read {} examples from {} [{} filtered, {} truncated]'.format(len(self.Data),fname,n_filtered,n_truncated))
         
@@ -105,7 +108,8 @@ class Dataset():
         ids_err = [] # 0     1     1     1     4         0     (0:<PAD>, 1:$KEEP, 4:$SPELL)
         ids_cor = [] # 0     0     0     0     624       0     (0:<PAD>, 624:example)
         ids_lin = [] # 0     0     3     0     0         0     (0:<PAD>, 3:pres_ind_3ps)
-        ids_COR = [] # [0,0] [0,0] [0,0] [0,0] [347,0]   [0,0] (0:<PAD>, [347,0]:example, when n_subt=2)
+        ids_COR = [] # [0,0] [0,0] [0,0] [0,0] [347,4]   [0,0] (0:<PAD>, [347,4]:example, when n_subt=2)
+        ids_sha = [] # 0     3     2     2     2         0     (0:<PAD>, 3:Xx, 2:x)
         #
         str_src.append('<s>')
         ids_src.append(self.idx_BOS_src)
@@ -113,6 +117,7 @@ class Dataset():
         ids_err.append(self.idx_PAD_err)
         ids_cor.append(self.idx_PAD_cor)
         ids_lin.append(self.idx_PAD_lin)
+        ids_sha.append(self.idx_PAD_sha)
         ids_COR.append([self.idx_PAD_COR]*self.args.n_subt)
         for i,dtok in enumerate(ldict):
             str_src.append(dtok['r'])
@@ -127,6 +132,7 @@ class Dataset():
                 ids_COR[-1] += [4]* (self.args.n_subt - len(ids_COR[-1])) ### 4 corresponds to flaubert model token: <special0> that must be predicted (while <pad> indicates nothing to predict)
             elif len(ids_COR[-1]) > self.args.n_subt:
                 ids_COR[-1] = ids_COR[-1][:self.args.n_subt] ### must be exactly n_subt tokens
+            ids_sha.append(dtok['is'] if 'is' in dtok else self.idx_PAD_sha)
             ### for debug purpose
             if ids_err[-1] != self.idx_PAD_err:
                 ltoks.append(dtok['r'])
@@ -143,11 +149,13 @@ class Dataset():
         ids_cor.append(self.idx_PAD_cor)
         ids_lin.append(self.idx_PAD_lin)
         ids_COR.append([self.idx_PAD_COR]*self.args.n_subt)
+        ids_sha.append(self.idx_PAD_sha)
         assert(len(ids_src) == len(ids_agg))
         assert(len(str_src) == len(ids_err))
         assert(len(str_src) == len(ids_cor))
         assert(len(str_src) == len(ids_lin))
         assert(len(str_src) == len(ids_COR))
+        assert(len(str_src) == len(ids_sha))
         logging.debug('idx {}'.format(idx))
         logging.debug('ids_src {}'.format(ids_src))
         logging.debug('ids_agg {}'.format(ids_agg))
@@ -156,51 +164,52 @@ class Dataset():
         logging.debug('ids_cor {}\t{}'.format(ids_cor, '\t'.join(lcorrs)))
         logging.debug('ids_lin {}\t{}'.format(ids_lin, '\t'.join(llins)))
         logging.debug('ids_COR {}'.format(ids_COR))
-        return ids_src, str_src, ids_err, ids_cor, ids_lin, ids_COR, ids_agg
+        logging.debug('ids_sha {}'.format(ids_sha))
+        return ids_src, str_src, ids_err, ids_cor, ids_lin, ids_COR, ids_sha, ids_agg
 
-    def build_cor_aggregate(self, field_cor):
-        myids_cor = list(map(int,field_cor.split(SEPAR2)))
-        if len(myids_cor) < self.args.n_subt:
-            myids_cor += [4]*(self.args.n_subt-len(myids_cor)) #4 corresponds to flaubert model token: <special0> that must be predicted (PAD is not)
-        elif len(myids_cor) > self.args.n_subt:
-            myids_cor = myids_cor[:self.args.n_subt] #truncation... problem if the right word (using n subtokens) cannot be produced
-        return [myids_cor]
+#    def build_cor_aggregate(self, field_cor):
+#        myids_cor = list(map(int,field_cor.split(SEPAR2)))
+#        if len(myids_cor) < self.args.n_subt:
+#            myids_cor += [4]*(self.args.n_subt-len(myids_cor)) #4 corresponds to flaubert model token: <special0> that must be predicted (PAD is not)
+#        elif len(myids_cor) > self.args.n_subt:
+#            myids_cor = myids_cor[:self.args.n_subt] #truncation... problem if the right word (using n subtokens) cannot be produced
+#        return [myids_cor]
             
-    def build_err_gector(self,field_err,l):
-        myids_err = self.err[field_err]
-        lerr = [self.idx_PAD_err] * l
-        if self.args.aggreg == 'first':
-            lerr[0] = myids_err
-        else:
-            lerr[-1] = myids_err
-        return lerr
+#    def build_err_gector(self,field_err,l):
+#        myids_err = self.err[field_err]
+#        lerr = [self.idx_PAD_err] * l
+#        if self.args.aggreg == 'first':
+#            lerr[0] = myids_err
+#        else:
+#            lerr[-1] = myids_err
+#        return lerr
         
-    def build_cor_gector(self,fields,n_subtok):
-        ### n_subtok is the number of subtokens of current source words
-        ### self.args.n_subt is the number of subtokens to be predicted as correction
-        if len(fields)<7:
-            myids_cor = [self.idx_PAD_cor]*self.args.n_subt
-        else:
-            myids_cor = list(map(int,fields[6].split(SEPAR2)))
-            
-        if len(myids_cor) < self.args.n_subt:
-            myids_cor += [4]*(self.args.n_subt-len(myids_cor)) #4 corresponds to flaubert model token: <special0> that must be predicted (PAD is not)
-        elif len(myids_cor) > self.args.n_subt:
-            myids_cor = myids_cor[:self.args.n_subt]
-
-        pad_cor = [self.idx_PAD_cor] * self.args.n_subt ### a word correction is formed of n_subtoken <pad>'s
-        lcor = [pad_cor] * n_subtok ### initially all subtokens of current word are padded
-        ### exx   ample
-        ### [0,0] [0,0]
-        if self.args.aggreg == 'first':
-            lcor[0] = myids_cor
-            ### exx   ample  #n_subtok=2
-            ### [15,0] [0,0] #when n_subt=1 (aggreg is first)
-        else:
-            lcor[-1] = myids_cor
-            ### exx   ample  #n_subtok=2
-            ### [0,0] [15,0] #when n_subt=1 (aggreg is last)
-        return lcor
+#    def build_cor_gector(self,fields,n_subtok):
+#        ### n_subtok is the number of subtokens of current source words
+#        ### self.args.n_subt is the number of subtokens to be predicted as correction
+#        if len(fields)<7:
+#            myids_cor = [self.idx_PAD_cor]*self.args.n_subt
+#        else:
+#            myids_cor = list(map(int,fields[6].split(SEPAR2)))
+#            
+#        if len(myids_cor) < self.args.n_subt:
+#            myids_cor += [4]*(self.args.n_subt-len(myids_cor)) #4 corresponds to flaubert model token: <special0> that must be predicted (PAD is not)
+#        elif len(myids_cor) > self.args.n_subt:
+#            myids_cor = myids_cor[:self.args.n_subt]
+#
+#        pad_cor = [self.idx_PAD_cor] * self.args.n_subt ### a word correction is formed of n_subtoken <pad>'s
+#        lcor = [pad_cor] * n_subtok ### initially all subtokens of current word are padded
+#        ### exx   ample
+#        ### [0,0] [0,0]
+#        if self.args.aggreg == 'first':
+#            lcor[0] = myids_cor
+#            ### exx   ample  #n_subtok=2
+#            ### [15,0] [0,0] #when n_subt=1 (aggreg is first)
+#        else:
+#            lcor[-1] = myids_cor
+#            ### exx   ample  #n_subtok=2
+#            ### [0,0] [15,0] #when n_subt=1 (aggreg is last)
+#        return lcor
     
     def __len__(self):
         return len(self.Data)

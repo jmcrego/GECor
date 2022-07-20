@@ -11,7 +11,8 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('file', type=str, nargs='*', help='Input files [do not use for STDIN]')
     parser.add_argument('--lex',   type=str, default=None, help='Lexicon (pickle) file [required]', required=True)
-    parser.add_argument('--voc_shapes', type=str, default=None, help='Vocabulary (shapes) file [required]', required=True)
+    parser.add_argument('--shapes', type=str, default=None, help='Shape vocabulary (None) [required]', required=True)
+    parser.add_argument('--inlexi', type=str, default=None, help='Inlexicon vocabulary (None) [required]', required=True)
     parser.add_argument('-o',   type=str, default=None, help='Output file [do not use for STDOUT]')
     parser.add_argument('-m',   type=str, default="fr_core_news_md", help='Spacy model name (fr_core_news_md)')
     parser.add_argument('-b',   type=int, default=1000, help='Batch size (1000)')
@@ -27,7 +28,7 @@ if __name__ == '__main__':
     create_logger(logfile,args.log)
     logging.info("Options = {}".format(args.__dict__))
     
-    spacyfy = Spacyfy(args.m, args.b, args.n, args.only_tokenize, args.lex, args.voc_shapes)    
+    spacyfy = Spacyfy(args.m, args.b, args.n, args.only_tokenize, args.lex, args.shapes, args.inlexi)    
     nlines = 0
     proc_time = 0.00001
     with open(args.o, "w") if args.o is not None else sys.stdout as fdo:

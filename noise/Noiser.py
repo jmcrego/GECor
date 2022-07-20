@@ -4,7 +4,6 @@ import time
 import spacy
 import random
 import logging
-#import argparse
 from collections import defaultdict
 from utils.FlaubertTok import FlaubertTok
 from utils.Lexicon import Lexicon
@@ -16,7 +15,7 @@ from model.Vocab import Vocab
 
 
 class Noiser():
-    def __init__(self, noises, lem, lex, pho, voce, vocc, vocl, vocs, max_noises=0, max_ratio=0.5, p_cor=0.0, p_lin=0.0, seed=0):
+    def __init__(self, noises, lem, lex, pho, voce, vocc, vocl, vocs, voci, max_noises=0, max_ratio=0.5, p_cor=0.0, p_lin=0.0, seed=0):
         if seed:
             random.seed(seed)
         self.flauberttok = FlaubertTok(max_ids_len=MAX_IDS_LEN)
@@ -27,6 +26,7 @@ class Noiser():
         self.vocab_cor = Vocab(vocc) if vocc is not None else None
         self.vocab_lin = Vocab(vocl) if vocl is not None else None
         self.vocab_sha = Vocab(vocs) if vocs is not None else None
+        self.vocab_inl = Vocab(voci) if voci is not None else None
         self.misspell = Misspell()
         self.noises = [x[0] for x in noises]
         self.wnoises = [x[1] for x in noises]
@@ -46,11 +46,11 @@ class Noiser():
         self.n_tokens += len(self.s)
         n_noises_sentence = 0
         n_noises_toinject = random.randint(0, min(self.max_noises, int(len(self.s)*self.max_ratio)))
-        logging.debug("BEFORE: {}".format([d['r'] for d in ldict]))
+        logging.debug("BEFORE: {}".format([d['raw'] for d in ldict]))
         for _ in range(n_noises_toinject*2): ### try this maximum number of times before stopping
             if n_noises_sentence >= n_noises_toinject:
                 break
-            idxs = [idx for idx in range(len(self.s)) if 'E' not in self.s[idx]]
+            idxs = [idx for idx in range(len(self.s)) if 'ierr' not in self.s[idx]]
             if len(idxs) == 0:
                 break
             random.shuffle(idxs)
@@ -77,7 +77,7 @@ class Noiser():
             elif noise == 'case': ### change case of current word and add $CASE1/$CASEn
                 n_noises_sentence += self.inject_case(idx)
         self.n_sents_with_n_noises[n_noises_sentence] += 1
-        logging.debug("AFTER : {}".format([d['r'] for d in ldict]))
+        logging.debug("AFTER : {}".format([d['raw'] for d in ldict]))
         #remove all p and plm from words
 #        for i in range(len(self.s)):
 #            if 'plm' in self.s[i]: #not used anymore
@@ -102,7 +102,7 @@ class Noiser():
             logging.info('\t{}-noises\t{} snts ({:.2f}%)'.format(n,N,100.0*N/self.n_sents))
 
         logging.info('Noised {} toks ({:.2f}%)'.format(n_tokens_noised,100.0*n_tokens_noised/self.n_tokens,100.0*n_tokens_noised/self.n_tokens))
-        for noise,n in self.n_tokens_noised_with.items():
+        for noise,n in sorted(self.n_tokens_noised_with.items(), key=lambda kv: kv[1], reverse=True):
             logging.info('\t{}   \t{} toks ({:.2f}%)'.format(noise,n,100.0*n/n_tokens_noised))
 
 
@@ -111,13 +111,18 @@ class Noiser():
         iE = int(self.vocab_err[err]) if self.vocab_err is not None else None
         return E, iE
 
-    def buildS(self, idx):
-        if isinstance(idx,int):
-            s = str(self.s[idx]['s'])
+    def buildS(self, idx_or_str):
+        if isinstance(idx_or_str,int):
+            s = str(self.s[idx_or_str]['s'])
         else: ###idx is the string to compute the shape on
-            s = shape_of_word(idx)
+            s = shape_of_word(idx_or_str)
         i_s = int(self.vocab_sha[s]) if self.vocab_sha is not None else None
         return s, i_s
+
+    def buildT(self, idx):
+        t = bool(self.s[idx]['t'])
+        it = int(self.s[idx]['it'])
+        return t, it
     
     def buildC(self, idx):
         C = str(self.s[idx]['r'])
@@ -134,7 +139,7 @@ class Noiser():
         iL = int(self.vocab_lin[L]) if self.vocab_lin is not None else None
         return L, iL
             
-    def dword_create(self, r, s, i, t, i_s=None, E=None, iE=None, C=None, iC=None, iCC=None, L=None, iL=None, p_cor=1.0, p_lin=1.0):
+    def dword_create(self, r, s, i, t, it=None, i_s=None, E=None, iE=None, C=None, iC=None, iCC=None, L=None, iL=None, p_cor=1.0, p_lin=1.0):
         d = {'r':str(r), 's':str(s), 'i':list(i), 't':str(t)}
         if E is not None:
             d['E'] = str(E)
@@ -142,6 +147,8 @@ class Noiser():
                 d['iE'] = int(iE)
         if i_s is not None:
             d['is'] = int(i_s)
+        if it is not None:
+            d['it'] = int(it)
         if random.random() < p_cor:
             if C is not None:
                 d['C'] = str(C)
@@ -157,33 +164,32 @@ class Noiser():
         return d
 
     #########################################
-    ### $APND ############################### r, s, i, t, E, C, iC, (plm, p)
+    ### $APND ###############################
     #########################################
     def inject_apnd(self, idx):
         if idx >= len(self.s):
             return False
-        if 'E' in self.s[idx]:
+        if 'ierr' in self.s[idx]:
             return False
         if idx+1 >= len(self.s):
             return False
-        if 'E' in self.s[idx+1]:
+        if 'ierr' in self.s[idx+1]:
             return False
-        if 'plm' not in self.s[idx+1] and self.s[idx+1]['r'] not in PUNCTUATION: #i don't append words without linguistic annotations unless punctuation
+        if 'plm' not in self.s[idx+1] and self.s[idx+1]['raw'] not in PUNCTUATION: #i don't append words without linguistic annotations unless punctuation
             return False
         if 'plm' in self.s[idx+1] and self.s[idx+1]['plm'].split('|')[0] in ['VER', 'ADJ', 'NOM']: #i don't append open class words
             return False
-        if self.vocab_cor is not None and self.s[idx+1]['r'] not in self.vocab_cor: #i don't append words that i cannot generate
+        if self.s[idx+1]['raw'] not in self.vocab_cor: #i don't append words that i cannot generate
             return False
         #
-        r = str(self.s[idx]['r'])
-        i = list(self.s[idx]['i'])
-        t = str(self.s[idx]['t'])
-        #E = '$APND'
-        E, iE = self.buildE('$APND')
-        s, i_s = self.buildS(idx)
-        C, iC, iCC = self.buildC(idx+1)
-        L, iL = self.buildL(idx)
-        self.s[idx] = self.dword_create(r, s, i, t, i_s=i_s, E=E, iE=iE, C=C, iC=iC, iCC=iCC, L=L, iL=iL, p_cor=1.0, p_lin=self.p_lin)
+        raw = str(self.s[idx]['raw'])
+        iraw = list(self.s[idx]['iraw'])
+        lex, ilex = self.buildLex(idx)
+        err, ierr = self.buildErr('$APND')
+        cor, icor, iCOR = self.buildCor(idx+1)
+        shp, ishp = self.buildShp(idx)
+        lng, ilng = self.buildLng(idx)
+        self.s[idx] = self.dword_create(r, s, i, t, it=it, i_s=i_s, E=E, iE=iE, C=C, iC=iC, iCC=iCC, L=L, iL=iL, p_cor=1.0, p_lin=self.p_lin)
         self.s.pop(idx+1) #delete idx+1
         #
         self.n_tokens_noised_with[E] += 1
@@ -201,16 +207,15 @@ class Noiser():
         #
         r = str(self.s[idx]['r'])
         i = list(self.s[idx]['i'])
-        t = str(self.s[idx]['t'])
-        #E = '$DELE'
+        t, it = self.buildT(idx)
         E, iE = self.buildE('$DELE')
         E2, iE2 = self.buildE(KEEP)
         s, i_s = self.buildS(idx)
         C, iC, iCC = self.buildC(idx)
         L, iL = self.buildL(idx)
         self.s.pop(idx)
-        self.s.insert(idx, self.dword_create(r, s, i, t, i_s=i_s, E=E, iE=iE, C=C, iC=iC, iCC=iCC, L=L, iL=iL, p_cor=self.p_cor, p_lin=self.p_lin))
-        self.s.insert(idx, self.dword_create(r, s, i, t, i_s=i_s, E=E2, iE=iE2, C=C, iC=iC, iCC=iCC, L=L, iL=iL, p_cor=self.p_cor, p_lin=self.p_lin))
+        self.s.insert(idx, self.dword_create(r, s, i, t, it=it, i_s=i_s, E=E, iE=iE, C=C, iC=iC, iCC=iCC, L=L, iL=iL, p_cor=self.p_cor, p_lin=self.p_lin))
+        self.s.insert(idx, self.dword_create(r, s, i, t, it=it, i_s=i_s, E=E2, iE=iE2, C=C, iC=iC, iCC=iCC, L=L, iL=iL, p_cor=self.p_cor, p_lin=self.p_lin))
         #
         self.n_tokens_noised_with[E] += 1
         logging.debug('{}\t{}'.format(E,C))
@@ -231,8 +236,7 @@ class Noiser():
         #
         ra = str(self.s[idx]['r'])
         ia = list(self.s[idx]['i'])
-        ta = str(self.s[idx]['t']) if 't' in self.s[idx] else None
-        #Ea = KEEP
+        ta, ita = self.buildT(idx)
         Ea, iEa = self.buildE(KEEP)
         sa, i_sa = self.buildS(idx)
         Ca, iCa, iCCa = self.buildC(idx)
@@ -240,8 +244,7 @@ class Noiser():
         #
         rb = str(self.s[idx+1]['r'])
         ib = list(self.s[idx+1]['i'])
-        tb = str(self.s[idx+1]['t']) if 't' in self.s[idx+1] else None
-        #Eb = '$SWAP'
+        tb, itb = self.buildT(idx+1)
         Eb, iEb = self.buildE('$SWAP')
         sb, i_sb = self.buildS(idx+1)
         Cb, iCb, iCCb = self.buildC(idx+1)
@@ -249,8 +252,8 @@ class Noiser():
         #
         self.s.pop(idx) #deletes a
         self.s.pop(idx) #deletes b
-        self.s.insert(idx, self.dword_create(ra, sa, ia, t=ta, i_s=i_sa, E=Ea, iE=iEa, C=Ca, iC=iCa, iCC=iCCa, L=La, iL=iLa, p_cor=self.p_cor, p_lin=self.p_lin)) #inserts a
-        self.s.insert(idx, self.dword_create(rb, sb, ib, t=tb, i_s=i_sb, E=Eb, iE=iEb, C=Cb, iC=iCb, iCC=iCCb, L=Lb, iL=iLb, p_cor=self.p_cor, p_lin=self.p_lin)) #inserts b a
+        self.s.insert(idx, self.dword_create(ra, sa, ia, t=ta, it=ita, i_s=i_sa, E=Ea, iE=iEa, C=Ca, iC=iCa, iCC=iCCa, L=La, iL=iLa, p_cor=self.p_cor, p_lin=self.p_lin)) #inserts a
+        self.s.insert(idx, self.dword_create(rb, sb, ib, t=tb, it=itb, i_s=i_sb, E=Eb, iE=iEb, C=Cb, iC=iCb, iCC=iCCb, L=Lb, iL=iLb, p_cor=self.p_cor, p_lin=self.p_lin)) #inserts b a
         #
         self.n_tokens_noised_with[Eb] += 1
         logging.debug('{}\t{} <-> {}'.format(Eb,rb,ra))
@@ -277,14 +280,14 @@ class Noiser():
         #
         r = reshape(t,self.s[idx]['s'])
         i = self.flauberttok.ids(r, is_split_into_words=True)
-        #E = '$LEMM'
         E, iE = self.buildE('$LEMM')
         s, i_s = self.buildS(r)
+        t, it = self.buildT(t)
         C, iC, iCC = self.buildC(idx)
-        L, iL = self.buildL(idx)        
+        L, iL = self.buildL(idx)
         logging.debug("L={} iL={}".format(L,iL))
         #
-        self.s[idx] = self.dword_create(r, s, i, t, i_s=i_s, E=E, iE=iE, C=C, iC=iC, iCC=iCC, L=L, iL=iL, p_cor=1.0, p_lin=self.p_lin)
+        self.s[idx] = self.dword_create(r, s, i, t, i_s=i_s, E=E, iE=iE, C=C, iC=iC, iCC=iCC, L=L, iL=iL, p_cor=self.p_cor, p_lin=1.0)
         #
         self.n_tokens_noised_with[E] += 1
         logging.debug('{}\t{} -> {}\t{} -> {}'.format(E,C,r,old_plm,new_plm))
@@ -308,7 +311,6 @@ class Noiser():
         #
         i = self.flauberttok.ids(r,is_split_into_words=True)
         t = self.lexicon.inlexicon(r)
-        #E = '$SPEL'
         E, iE = self.buildE('$SPEL')
         s, i_s = self.buildS(r)
         C, iC, iCC = self.buildC(idx)
@@ -338,7 +340,6 @@ class Noiser():
         #
         r = reshape(t,self.s[idx]['s'])
         i = self.flauberttok.ids(r, is_split_into_words=True)
-        #E = '$PHON'
         E, iE = self.buildE('$PHON')
         s, i_s = self.buildS(r)
         C, iC, iCC = self.buildC(idx)
@@ -365,7 +366,6 @@ class Noiser():
         old_shape = str(self.s[idx]['s'])
         if len(old_shape) == 1: ### all lowercased or uppercased
             if len(old_wrd) == 1:
-                #E = '$CASEn'
                 E, iE = self.buildE('$CASEn')
                 if old_shape == 'X':
                     r = old_wrd.lower()
@@ -375,7 +375,6 @@ class Noiser():
                     return False
             else: #len(old_wrd)>1
                 if random.random() < 0.5: #CASEn
-                    #E = '$CASEn'
                     E, iE = self.buildE('$CASEn')
                     if old_shape == 'X':
                         r = old_wrd.lower()
@@ -384,7 +383,6 @@ class Noiser():
                     else:
                         return False
                 else: #CASE1
-                    #E = '$CASE1'
                     E, iE = self.buildE('$CASE1')
                     if old_shape == 'X':
                         r = old_wrd[0].lower() + old_wrd[1:]
@@ -393,7 +391,6 @@ class Noiser():
                     else:
                         return False
         else: #len(txt_shape) > 1 (i can only do CASE1)
-            #E = '$CASE1'
             E, iE = self.buildE('$CASE1')
             if old_shape.startswith('X'):
                 r = old_wrd[0].lower() + old_wrd[1:]
@@ -433,7 +430,6 @@ class Noiser():
         r = str(self.s[idx]['r'] + self.s[idx+1]['r']) 
         i = self.flauberttok.ids(r, is_split_into_words=True)
         t = self.lexicon.inlexicon(r)
-        #E = '$SPLT'
         E, iE = self.buildE('$SPLT')
         s, i_s = self.buildS(r)
         C, iC, iCC = self.buildC(idx)
@@ -463,7 +459,6 @@ class Noiser():
         ra = old_wrd[:k]
         ia = self.flauberttok.ids(ra,is_split_into_words=True)
         ta = self.lexicon.inlexicon(ra)
-        #Ea = '$MRGE'
         Ea, iEa = self.buildE('$MRGE')
         sa, i_sa = self.buildS(ra)
         Ca, iCa, iCCa = self.buildC(idx)
@@ -472,7 +467,6 @@ class Noiser():
         rb = old_wrd[k:]
         ib = self.flauberttok.ids(rb,is_split_into_words=True)
         tb = self.lexicon.inlexicon(rb)
-        #Eb = KEEP
         Eb, iEb = self.buildE(KEEP)
         sb, i_sb = self.buildS(rb)
         Cb, iCb, iCCb = self.buildC(idx)
@@ -514,7 +508,6 @@ class Noiser():
             rb = old_wrd[k+1:]
             ib = self.flauberttok.ids(rb, is_split_into_words=True)
             tb = self.lexicon.inlexicon(rb)
-            #Eb = KEEP
             Eb, iEb = self.buildE(KEEP)
             sb, i_sb = self.buildS(rb)
             if sb not in ['x', 'X', 'Xx']:
@@ -561,7 +554,6 @@ class Noiser():
             ib = self.flauberttok.ids(rb, is_split_into_words=True)
             sb, i_sb = self.buildS(rb)
             tb = self.lexicon.inlexicon(rb)
-            #Eb = '$HYPHs'
             Eb, iEb = self.buildE('$HYPHs')
             Cb = rb
             iCb = int(self.vocab_cor[rb]) if self.vocab_cor is not None else None
