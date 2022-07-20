@@ -10,14 +10,15 @@ from utils.Utils import shape_of_word
 
 class Spacyfy():
 
-    def __init__(self, m, b, n, only_tokenize, flex, voc_sha=None):
+    def __init__(self, m, b, n, only_tokenize, flex, shapes=None, inlexi=None):
         self.b = b #batch size
         self.n = n #n preproces
         self.only_tokenize = only_tokenize
         self.lines = []
         self.lex = Lexicon(flex)
         self.tok = FlaubertTok("flaubert/flaubert_base_cased")
-        self.vocS = Vocab(voc_sha) if voc_sha is not None else None
+        self.vocS = Vocab(shapes) if shapes is not None else None
+        self.vocI = Vocab(inlexi) if inlexi is not None else None
             
         if only_tokenize:
             from spacy.lang.fr import French
@@ -29,11 +30,13 @@ class Spacyfy():
             self.nlp = spacy.load(m, exclude=["parser", "ner", "attribute_ruler"]) # ["tok2vec", "morphologizer", "lemmatizer", "tagger", "parser", "ner", "attribute_ruler"]
             logging.info('Loaded {} with modules {}'.format(m, self.nlp.pipe_names))
 
-    def read_lines(self,fn):
+    def read_lines(self,fn,one_out_of=1):
         logging.info('Reading from {}...'.format(fn))
-        with open(fn, 'r', encoding='utf-8') if fn != "stdin" else sys.stdin as fd:    
-            lines = fd.readlines()
-        self.lines = [s.strip() for s in lines]
+        with open(fn, 'r', encoding='utf-8') if fn != "stdin" else sys.stdin as fd:
+            self.lines = []
+            for i,line in enumerate(fd):
+                if i%one_out_of == 0:
+                    self.lines.append(line.strip())
         logging.info('Read {} lines from {}'.format(len(self.lines),fn))
 
     def __len__(self):
@@ -57,26 +60,27 @@ class Spacyfy():
                 for token in doc:
                     if ' ' in token.text or ' ' in token.lemma_:
                         continue
+                    #if u'\xa0' in token.text or u'\u202f' in token.text: #filter spurious words: \u202f \xa0
+                    #    logging.debug('Found bad character in token: {} DISCARDED token'.format(token.text))
+                    #    continue
                     line.append(self.token2dword(token))
                 yield line
                     
-            #lines = [[self.token2dword(token) for token in doc] for doc in docs]
-            #for line in lines:
-            #    yield line
-    
     def token2dword(self,token):
         raw = token.text
         shape = shape_of_word(raw)
         ids = self.tok.ids(raw, is_split_into_words=True)
         txt = self.lex.inlexicon(raw)
-        d = {'r':raw, 's':shape, 'i': ids, 't': txt}
+        inlex = txt is not None #True or False
+        d = {'raw':raw, 'shp':shape, 'iraw': ids, 'lex': txt}
         if self.vocS is not None:
-            d['is'] = self.vocS[shape]
-        if self.only_tokenize or txt == '':
+            d['ishp'] = self.vocS[shape]
+        if self.vocI is not None:
+            d['ilex'] = self.vocI[str(inlex)]
+        if self.only_tokenize or txt is None:
             return d
         plm = self.lex.spacy2morphalou(txt, str(token.lemma_), str(token.pos_), str(token.morph)) #this is used to generate noise
-        if plm == '':
-            return d
-        d['plm'] = plm
+        if plm is not None:
+            d['plm'] = plm
         return d
 

@@ -118,3 +118,35 @@ def Word(wrd, wrd_ids, err=None, cor=None, cor_ids=None):
         d['iC'] = copy.deepcopy(cor_ids)
     return d
 
+def conll(l):
+    out = []
+    for w in l:
+        wout = []
+        if 'r' in w:
+            wout.append(w['r'])
+        if 'i' in w:
+            wout.append("i:{}".format('-'.join(list(map(str,w['i'])))))
+        if 's' in w:
+            wout.append('s:'+w['s'])
+        if 'is' in w:
+            wout.append('is:'+str(w['is']))
+        if 't' in w:
+            wout.append('t:'+str(w['t']!=''))
+        if 'E' in w:
+            wout.append('E:'+w['E'])
+        if 'iE' in w:
+            wout.append('iE:'+str(w['iE']))
+        if 'C' in w:
+            wout.append('C:'+w['C'])
+        if 'iC' in w:
+            wout.append('iC:'+str(w['iC']))
+        if 'iCC' in w:
+            wout.append("iCC:{}".format('-'.join(list(map(str,w['iCC'])))))
+        if 'L' in w:
+            wout.append('L:'+w['L'])
+        if 'iL' in w:
+            wout.append('iL:'+str(w['iL']))
+#        if 'plm' in w:
+#            wout.append(w['plm'])
+        out.append('\t'.join(wout))
+    return '\n'.join(out) + '\n'

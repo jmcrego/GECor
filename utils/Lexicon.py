@@ -34,14 +34,14 @@ class Lexicon():
             return raw.upper() #U+
         ### not found
         logging.debug('raw not in lexicon SPACY: {}'.format(raw))
-        return ''
+        return None
         
     def spacy2morphalou(self, txt, lem_spacy, pos_spacy, morph_spacy):
         ### find the most suitable pos in morphalou for given txt and spacy_pos
         pos = self.spacy2morphalou_pos(txt, pos_spacy, morph_spacy) #ADJ ADV ART ART:DEF ART:DEM ART:EXC ART:IND ART:POS CON INT NOM PRE PRO PRO:DEM PRO:INT PRO:PER PRO:POS PRO:REL VER
         if pos is None:
             logging.debug('pos not in lexicon: {} {} SPACY: {} {} {}'.format(txt, pos, lem_spacy, pos_spacy, morph_spacy))
-            return ''
+            return None
         ### convert spacy feats to look like morphalou feats
         ### then, find lexicon lem/features that best match to txt/pos/spacy_feats_like_morphalou
         like_morphalou = self.spacy2morphalou_morph(txt, pos, morph_spacy) #['Sing', 'Fem', ...]
@@ -57,11 +57,8 @@ class Lexicon():
                     best_plm = feats
         if max_matchs == -1:
             logging.debug('feats not in lexicon: {} {} {} SPACY: {} {} {}'.format(txt, pos, like_morphalou, lem_spacy, pos_spacy, morph_spacy))
-            return ''
-        #phones = []
-        #for pho in self.txt2pho[txt]:
-        #    phones.append(pho)        
-        return best_plm #, phones #phones may be empty
+            return None
+        return best_plm
 
     def n_matchs(self, morph, feats): #spacy morph converted to lexicon feats (Ex: ['Sing', 'Fem', ...]) VS feats of a lexicon entry (['indicative', 'present', '3', 'Sing', 'Fem'])
         n_matchs = 0
