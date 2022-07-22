@@ -58,7 +58,7 @@ if __name__ == '__main__':
             fdo.write('{}\t{}\n'.format(v,k))
             
     with open(args.o + '.ERRORS', "w") as fdo:
-        fdo.write("$APND\n$CASE1\n$CASEn\n$DELE\n$HYPHm\n$HYPHs\n$KEEP\n$LEMM\n$MRGE\n$PHON\n$SPEL\n$SPLT\n$SWAP\n")
+        fdo.write("$APND\n$CAS1\n$CASn\n$DELE\n$HYPm\n$HYPs\n$KEEP\n$LEMM\n$MRGE\n$PHON\n$SPEL\n$SPLT\n$SWAP\n")
         
     logging.info('Found {} words, {} shapes in ({:.2f} seconds, {:.2f} lines/second)'.format(len(words), len(shapes), proc_time, nlines/proc_time))
 

@@ -198,7 +198,7 @@ class Inference():
                     return w1 + " " + w2, False
                 continue #try next tag
             
-            elif curr_tags[k] == '$CASE1':
+            elif curr_tags[k] == '$CAS1':
                 if not word[0].isalpha():
                     continue                
                 if word[0].isupper():
@@ -207,14 +207,14 @@ class Inference():
                     word = word[0].upper() + word[1:]
                 return word, False
         
-            elif curr_tags[k] == '$CASEn':
+            elif curr_tags[k] == '$CASn':
                 if word.islower():
                     return word.upper(), False
                 elif word.isupper():
                     return word.lower(), False
                 continue #try next tag
             
-            elif curr_tags[k] == '$HYPHs':
+            elif curr_tags[k] == '$HYPs':
                 i = word.find('-')
                 if i >= 0:
                     w1 = word[:i]
@@ -222,7 +222,7 @@ class Inference():
                     return w1 + " " + w2, False
                 continue #return word, False ### no change
 
-            elif curr_tags[k] == '$HYPHm':
+            elif curr_tags[k] == '$HYPm':
                 if next_word != '</s>':
                     #if word+ "-" + next_word in self.lex:
                     return word + "-" + next_word, True ### must delete next word

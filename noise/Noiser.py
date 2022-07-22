@@ -71,11 +71,11 @@ class Noiser():
                 n_noises_sentence += self.inject_dele(idx)
             elif noise == 'mrge': ### splt current word into two tokens and add $MRGE error to first splt
                 n_noises_sentence += self.inject_mrge(idx)
-            elif noise == 'hyph': ### splt/mrge words using hyph and add $HYPHs/$HYPHm
+            elif noise == 'hyph': ### splt/mrge words using hyph and add $HYPs/$HYPm
                 n_noises_sentence += self.inject_hyph(idx)
             elif noise == 'swap': ### swap current/next words and add $SWAP error to first
                 n_noises_sentence += self.inject_swap(idx)
-            elif noise == 'case': ### change case of current word and add $CASE1/$CASEn
+            elif noise == 'case': ### change case of current word and add $CAS1/$CASn
                 n_noises_sentence += self.inject_case(idx)
         self.n_sents_with_n_noises[n_noises_sentence] += 1
         for idx in range(len(self.s)):
@@ -396,7 +396,7 @@ class Noiser():
         old_shape = str(self.s[idx]['shp'])
         if len(old_shape) == 1: ### all lowercased or uppercased
             if len(old_wrd) == 1:
-                err, ierr = self.buildErr('$CASEn')
+                err, ierr = self.buildErr('$CASn')
                 if old_shape == 'X':
                     raw = old_wrd.lower()
                 elif old_shape == 'x':
@@ -404,24 +404,24 @@ class Noiser():
                 else:
                     return False
             else: #len(old_wrd)>1
-                if random.random() < 0.5: #CASEn
-                    err, ierr = self.buildErr('$CASEn')
+                if random.random() < 0.5: #CASn
+                    err, ierr = self.buildErr('$CASn')
                     if old_shape == 'X':
                         raw = old_wrd.lower()
                     elif old_shape == 'x':
                         raw = old_wrd.upper()
                     else:
                         return False
-                else: #CASE1
-                    err, ierr = self.buildErr('$CASE1')
+                else: #CAS1
+                    err, ierr = self.buildErr('$CAS1')
                     if old_shape == 'X':
                         raw = old_wrd[0].lower() + old_wrd[1:]
                     elif old_shape == 'x':
                         raw = old_wrd[0].upper() + old_wrd[1:]
                     else:
                         return False
-        else: #len(txt_shape) > 1 (i can only do CASE1)
-            err, ierr = self.buildErr('$CASE1')
+        else: #len(txt_shape) > 1 (i can only do CAS1)
+            err, ierr = self.buildErr('$CAS1')
             if old_shape.startswith('X'):
                 raw = old_wrd[0].lower() + old_wrd[1:]
             elif old_shape.startswith('x'):
@@ -451,14 +451,14 @@ class Noiser():
             return False
         old_wrd = str(self.s[idx]['raw'])
         
-        if old_wrd.count('-') == 1: ### HYPHm: Saint-Tropez -> Saint Tropez
+        if old_wrd.count('-') == 1: ### HYPm: Saint-Tropez -> Saint Tropez
             k = old_wrd.find('-')
             if k==0 or k==len(old_wrd)-1: ### hyphen cannot be in the begining/end
                 return False
             rawa = old_wrd[:k]
             irawa = self.flauberttok.ids(rawa, is_split_into_words=True)
             lexa, ilexa = self.buildLex(rawa)
-            erra, ierra = self.buildErr('$HYPHm')
+            erra, ierra = self.buildErr('$HYPm')
             shpa, ishpa = self.buildShp(rawa)
             if shpa not in ['x', 'X', 'Xx']:
                 return False
@@ -483,7 +483,7 @@ class Noiser():
             logging.debug('{}\t{} -> {} {}'.format(erra,old_wrd,rawa,rawb))
             return True
         
-        elif old_wrd.count('-') == 0: ### HYPHs: Saint Jacques => Saint - Jacques
+        elif old_wrd.count('-') == 0: ### HYPs: Saint Jacques => Saint - Jacques
             if idx == len(self.s)-1:
                 return False
             if 'ierr' in self.s[idx+1]:
@@ -508,7 +508,7 @@ class Noiser():
             irawb = self.flauberttok.ids(rawb, is_split_into_words=True)
             shpb, ishpb = self.buildShp(rawb)
             lexb, ilexb = self.buildLex(rawb)
-            errb, ierrb = self.buildErr('$HYPHs')
+            errb, ierrb = self.buildErr('$HYPs')
             #
             rawc, irawc = self.buildRaw_as(idx+1)
             lexc, ilexc = self.buildLex_as(idx+1)
