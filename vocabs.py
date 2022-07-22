@@ -37,11 +37,11 @@ if __name__ == '__main__':
         for line in tqdm(spacyfy):
             nlines += 1
             for d in line:
-                if d['r'].isnumeric() or '‗' in d['r']:
+                if d['raw'].isnumeric() or '‗' in d['raw']:
                     continue
-                words[d['r']] += 1
-                shapes[d['s']] += 1
-                inlexi[('t' in d and d['t'] != "")] += 1
+                words[d['raw']] += 1
+                shapes[d['shp']] += 1
+                inlexi[('lex' in d and d['lex'] is not None)] += 1
     toc = time.time()
     proc_time += toc - tic
 

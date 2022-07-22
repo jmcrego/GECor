@@ -33,14 +33,14 @@ class Lexicon():
         if raw.upper() in self.txt2pos:
             return raw.upper() #U+
         ### not found
-        logging.debug('raw not in lexicon SPACY: {}'.format(raw))
+        #logging.debug('raw not in lexicon: {}'.format(raw))
         return None
         
     def spacy2morphalou(self, txt, lem_spacy, pos_spacy, morph_spacy):
         ### find the most suitable pos in morphalou for given txt and spacy_pos
         pos = self.spacy2morphalou_pos(txt, pos_spacy, morph_spacy) #ADJ ADV ART ART:DEF ART:DEM ART:EXC ART:IND ART:POS CON INT NOM PRE PRO PRO:DEM PRO:INT PRO:PER PRO:POS PRO:REL VER
         if pos is None:
-            logging.debug('pos not in lexicon: {} {} SPACY: {} {} {}'.format(txt, pos, lem_spacy, pos_spacy, morph_spacy))
+            #logging.debug('pos not in lexicon: {} {} SPACY: {} {} {}'.format(txt, pos, lem_spacy, pos_spacy, morph_spacy))
             return None
         ### convert spacy feats to look like morphalou feats
         ### then, find lexicon lem/features that best match to txt/pos/spacy_feats_like_morphalou
@@ -56,7 +56,7 @@ class Lexicon():
                     max_matchs = n_matchs
                     best_plm = feats
         if max_matchs == -1:
-            logging.debug('feats not in lexicon: {} {} {} SPACY: {} {} {}'.format(txt, pos, like_morphalou, lem_spacy, pos_spacy, morph_spacy))
+            #logging.debug('feats not in lexicon: {} {} {} SPACY: {} {} {}'.format(txt, pos, like_morphalou, lem_spacy, pos_spacy, morph_spacy))
             return None
         return best_plm
 

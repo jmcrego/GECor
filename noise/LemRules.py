@@ -64,7 +64,7 @@ class LemRules():
         return toks
 
     def __call__(self, d):
-        itxt = d['t']
+        itxt = d['lex']
         iplm = d['plm']
         ipos, ilem, imode, itense, ipers, inombre, igenre = self.features(iplm)
         ltxt, lplm = [], [] #found words and their features
@@ -113,6 +113,6 @@ if __name__ == '__main__':
                     rplm = plm.split('|')
                     del iplm[1] #del lem
                     del rplm[1] #del lem
-                    print("{}\t{}\t{}\t{}".format(d['t'],txt,'|'.join(iplm),'|'.join(rplm)))
+                    print("{}\t{}\t{}\t{}".format(d['lex'],txt,'|'.join(iplm),'|'.join(rplm)))
     toc = time.time()
     logging.info('Done {} lines ({:.2f} seconds)'.format(n,toc-tic))

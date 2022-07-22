@@ -15,7 +15,7 @@ from model.Vocab import Vocab
 
 
 class Noiser():
-    def __init__(self, noises, lem, lex, pho, voce, vocc, vocl, vocs, voci, max_noises=0, max_ratio=0.5, p_cor=0.0, p_lin=0.0, seed=0):
+    def __init__(self, noises, lem, lex, pho, voce, vocc, vocl, vocs, voci, max_noises=0, max_ratio=0.5, p_cor=0.0, p_lng=0.0, seed=0):
         if seed:
             random.seed(seed)
         self.flauberttok = FlaubertTok(max_ids_len=MAX_IDS_LEN)
@@ -24,7 +24,7 @@ class Noiser():
         self.homophones = Homophones(pho)
         self.vocab_err = Vocab(voce) if voce is not None else None
         self.vocab_cor = Vocab(vocc) if vocc is not None else None
-        self.vocab_lin = Vocab(vocl) if vocl is not None else None
+        self.vocab_lng = Vocab(vocl) if vocl is not None else None
         self.vocab_sha = Vocab(vocs) if vocs is not None else None
         self.vocab_inl = Vocab(voci) if voci is not None else None
         self.misspell = Misspell()
@@ -33,11 +33,12 @@ class Noiser():
         self.max_noises = max_noises
         self.max_ratio = max_ratio
         self.p_cor = p_cor
-        self.p_lin = p_lin
+        self.p_lng = p_lng
         self.n_sents = 0
         self.n_tokens = 0
         self.n_tokens_noised_with = defaultdict(int) #n_tokens_noised_with['$APND'] += 1
         self.n_sents_with_n_noises = defaultdict(int) #n_sents_with_n_noises[3] += 1
+        self.n_tokens_predict = defaultdict(int) #n_sents_with_n_noises['cor'] += 1
         logging.info("Built Noiser")
 
     def __call__(self, ldict):
@@ -77,14 +78,31 @@ class Noiser():
             elif noise == 'case': ### change case of current word and add $CASE1/$CASEn
                 n_noises_sentence += self.inject_case(idx)
         self.n_sents_with_n_noises[n_noises_sentence] += 1
-        logging.debug("AFTER : {}".format([d['raw'] for d in ldict]))
-        #remove all p and plm from words
-#        for i in range(len(self.s)):
-#            if 'plm' in self.s[i]: #not used anymore
-#                self.s[i].pop('plm')
-#            if 'E' not in self.s[i]:
-#                self.s[i]['E'], self.s[i]['iE'] = self.buildE(KEEP)
+        for idx in range(len(self.s)):
+            if 'ierr' in self.s[idx]:
+                continue
+            self.n_tokens_predict['total'] += 1
+            lng, ilng = None, None
+            cor, icor, iCOR = None, None, None
+            
+            if 'plm' in self.s[idx] and random.random() < self.p_lng:
+                lng, ilng = self.buildLng(idx)
+                if lng is not None:
+                    self.n_tokens_predict['lng'] += 1
+
+            if self.s[idx]['raw'] in self.vocab_cor and random.random() < self.p_cor:
+                cor, icor, iCOR = self.buildCor_from(idx)
+                if cor is not None:
+                    self.n_tokens_predict['cor'] += 1
+                    
+            if lng is not None or cor is not None:
+                err, ierr = self.buildErr(KEEP)
+                raw, iraw = self.buildRaw_as(idx)
+                shp, ishp = self.buildShp_as(idx)
+                lex, ilex = self.buildLex_as(idx)
+                self.s[idx] = self.dword(raw, iraw, shp, ishp, lex, ilex, err=err, ierr=ierr, cor=cor, icor=icor, iCOR=iCOR, lng=lng, ilng=ilng)
                 
+        logging.debug("AFTER : {}".format([d['raw'] for d in ldict]))
         return self.s
 
     def debug(self,tic):
@@ -105,63 +123,10 @@ class Noiser():
         for noise,n in sorted(self.n_tokens_noised_with.items(), key=lambda kv: kv[1], reverse=True):
             logging.info('\t{}   \t{} toks ({:.2f}%)'.format(noise,n,100.0*n/n_tokens_noised))
 
-
-    def buildE(self, err):
-        E = str(err)
-        iE = int(self.vocab_err[err]) if self.vocab_err is not None else None
-        return E, iE
-
-    def buildS(self, idx_or_str):
-        if isinstance(idx_or_str,int):
-            s = str(self.s[idx_or_str]['s'])
-        else: ###idx is the string to compute the shape on
-            s = shape_of_word(idx_or_str)
-        i_s = int(self.vocab_sha[s]) if self.vocab_sha is not None else None
-        return s, i_s
-
-    def buildT(self, idx):
-        t = bool(self.s[idx]['t'])
-        it = int(self.s[idx]['it'])
-        return t, it
-    
-    def buildC(self, idx):
-        C = str(self.s[idx]['r'])
-        iC = int(self.vocab_cor[self.s[idx]['r']]) if self.vocab_cor is not None else None
-        iCC = list(self.s[idx]['i'])
-        return C, iC, iCC
-        
-    def buildL(self, idx):
-        if 'plm' not in self.s[idx]:
-            return None, None
-        l = self.s[idx]['plm'].split('|')
-        l.pop(1)
-        L = str('|'.join(l))
-        iL = int(self.vocab_lin[L]) if self.vocab_lin is not None else None
-        return L, iL
-            
-    def dword_create(self, r, s, i, t, it=None, i_s=None, E=None, iE=None, C=None, iC=None, iCC=None, L=None, iL=None, p_cor=1.0, p_lin=1.0):
-        d = {'r':str(r), 's':str(s), 'i':list(i), 't':str(t)}
-        if E is not None:
-            d['E'] = str(E)
-            if iE is not None:
-                d['iE'] = int(iE)
-        if i_s is not None:
-            d['is'] = int(i_s)
-        if it is not None:
-            d['it'] = int(it)
-        if random.random() < p_cor:
-            if C is not None:
-                d['C'] = str(C)
-                if iC is not None:
-                    d['iC'] = int(iC)
-                if iCC is not None:
-                    d['iCC'] = list(iCC)
-        if random.random() < p_lin:
-            if L is not None:
-                d['L'] = str(L)
-                if iL is not None:
-                    d['iL'] = int(iL)
-        return d
+        if self.n_tokens_predict['total'] > 0:
+            logging.info('Unnoised {} toks'.format(self.n_tokens_predict['total']))
+            logging.info('\tadded {} pred \t{} toks ({:.2f}%)'.format('COR', self.n_tokens_predict['cor'], 100.0*self.n_tokens_predict['cor']/self.n_tokens_predict['total']))
+            logging.info('\tadded {} pred \t{} toks ({:.2f}%)'.format('LNG', self.n_tokens_predict['lng'], 100.0*self.n_tokens_predict['lng']/self.n_tokens_predict['total']))
 
     #########################################
     ### $APND ###############################
@@ -177,48 +142,46 @@ class Noiser():
             return False
         if 'plm' not in self.s[idx+1] and self.s[idx+1]['raw'] not in PUNCTUATION: #i don't append words without linguistic annotations unless punctuation
             return False
-        if 'plm' in self.s[idx+1] and self.s[idx+1]['plm'].split('|')[0] in ['VER', 'ADJ', 'NOM']: #i don't append open class words
-            return False
         if self.s[idx+1]['raw'] not in self.vocab_cor: #i don't append words that i cannot generate
             return False
+        if 'plm' in self.s[idx+1] and self.s[idx+1]['plm'].split('|')[0] in ['VER', 'ADJ', 'NOM']: #i don't append open class words
+            return False
         #
-        raw = str(self.s[idx]['raw'])
-        iraw = list(self.s[idx]['iraw'])
-        lex, ilex = self.buildLex(idx)
+        raw, iraw = self.buildRaw_as(idx)
+        shp, ishp = self.buildShp_as(idx)
+        lex, ilex = self.buildLex_as(idx)
         err, ierr = self.buildErr('$APND')
-        cor, icor, iCOR = self.buildCor(idx+1)
-        shp, ishp = self.buildShp(idx)
-        lng, ilng = self.buildLng(idx)
-        self.s[idx] = self.dword_create(r, s, i, t, it=it, i_s=i_s, E=E, iE=iE, C=C, iC=iC, iCC=iCC, L=L, iL=iL, p_cor=1.0, p_lin=self.p_lin)
+        cor, icor, iCOR = self.buildCor_from(idx+1)
+        ###lng, ilng = self.buildLng_from(idx)
+        self.s[idx] = self.dword(raw, iraw, shp, ishp, lex, ilex, err=err, ierr=ierr, cor=cor, icor=icor, iCOR=iCOR)
         self.s.pop(idx+1) #delete idx+1
         #
-        self.n_tokens_noised_with[E] += 1
-        logging.debug('{}\t{}'.format(E,C))
+        self.n_tokens_noised_with[err] += 1
+        logging.debug('{}\t{}'.format(err,cor))
         return True
-        
+
     #########################################
-    ### $DELE ############################### r, s, i, t, E, C, iC, (plm, p)
+    ### $DELE ###############################
     #########################################
     def inject_dele(self, idx):
         if idx >= len(self.s):
             return False
-        if 'E' in self.s[idx]:
+        if 'ierr' in self.s[idx]:
             return False
         #
-        r = str(self.s[idx]['r'])
-        i = list(self.s[idx]['i'])
-        t, it = self.buildT(idx)
-        E, iE = self.buildE('$DELE')
-        E2, iE2 = self.buildE(KEEP)
-        s, i_s = self.buildS(idx)
-        C, iC, iCC = self.buildC(idx)
-        L, iL = self.buildL(idx)
-        self.s.pop(idx)
-        self.s.insert(idx, self.dword_create(r, s, i, t, it=it, i_s=i_s, E=E, iE=iE, C=C, iC=iC, iCC=iCC, L=L, iL=iL, p_cor=self.p_cor, p_lin=self.p_lin))
-        self.s.insert(idx, self.dword_create(r, s, i, t, it=it, i_s=i_s, E=E2, iE=iE2, C=C, iC=iC, iCC=iCC, L=L, iL=iL, p_cor=self.p_cor, p_lin=self.p_lin))
+        raw, iraw = self.buildRaw_as(idx)
+        shp, ishp = self.buildShp_as(idx)
+        lex, ilex = self.buildLex_as(idx)
+        err, ierr = self.buildErr('$DELE')
+        err2, ierr2 = self.buildErr(KEEP)
+        #cor, icor, iCOR = self.buildCor_from(idx)
+        ###lng, ilng = self.buildLng_from(idx)
+        self.s.pop(idx) #replaced by the next two words
+        self.s.insert(idx, self.dword(raw, iraw, shp, ishp, lex, ilex, err=err,  ierr=ierr)) #must be deleted
+        self.s.insert(idx, self.dword(raw, iraw, shp, ishp, lex, ilex, err=err2, ierr=ierr2)) #must be kept
         #
-        self.n_tokens_noised_with[E] += 1
-        logging.debug('{}\t{}'.format(E,C))
+        self.n_tokens_noised_with[err] += 1
+        logging.debug('{}\t{}'.format(err,raw))
         return True
 
     #########################################
@@ -227,359 +190,405 @@ class Noiser():
     def inject_swap(self, idx):
         if idx >= len(self.s):
             return False
-        if 'E' in self.s[idx]:
+        if 'ierr' in self.s[idx]:
             return False
         if idx+1 >= len(self.s):
             return False
-        if 'E' in self.s[idx+1]:
+        if 'ierr' in self.s[idx+1]:
             return False
         #
-        ra = str(self.s[idx]['r'])
-        ia = list(self.s[idx]['i'])
-        ta, ita = self.buildT(idx)
-        Ea, iEa = self.buildE(KEEP)
-        sa, i_sa = self.buildS(idx)
-        Ca, iCa, iCCa = self.buildC(idx)
-        La, iLa = self.buildL(idx)
+        rawa, irawa = self.buildRaw_as(idx)
+        shpa, ishpa = self.buildShp_as(idx)
+        lexa, ilexa = self.buildLex_as(idx)
+        erra, ierra = self.buildErr(KEEP)
+        #cora, icora, iCORa = self.buildCor_from(idx)
+        #lnga, ilnga = self.buildLng_from(idx)
         #
-        rb = str(self.s[idx+1]['r'])
-        ib = list(self.s[idx+1]['i'])
-        tb, itb = self.buildT(idx+1)
-        Eb, iEb = self.buildE('$SWAP')
-        sb, i_sb = self.buildS(idx+1)
-        Cb, iCb, iCCb = self.buildC(idx+1)
-        Lb, iLb = self.buildL(idx+1)
+        rawb, irawb = self.buildRaw_as(idx+1)
+        shpb, ishpb = self.buildShp_as(idx+1)
+        lexb, ilexb = self.buildLex_as(idx+1)
+        errb, ierrb = self.buildErr('$SWAP')
+        #corb, icorb, iCORb = self.buildCor_from(idx+1)
+        #lngb, ilngb = self.buildLng_from(idx+1)
         #
         self.s.pop(idx) #deletes a
         self.s.pop(idx) #deletes b
-        self.s.insert(idx, self.dword_create(ra, sa, ia, t=ta, it=ita, i_s=i_sa, E=Ea, iE=iEa, C=Ca, iC=iCa, iCC=iCCa, L=La, iL=iLa, p_cor=self.p_cor, p_lin=self.p_lin)) #inserts a
-        self.s.insert(idx, self.dword_create(rb, sb, ib, t=tb, it=itb, i_s=i_sb, E=Eb, iE=iEb, C=Cb, iC=iCb, iCC=iCCb, L=Lb, iL=iLb, p_cor=self.p_cor, p_lin=self.p_lin)) #inserts b a
+        self.s.insert(idx, self.dword(rawa, irawa, shpa, ishpa, lexa, ilexa, err=erra,  ierr=ierra)) #inserts a
+        self.s.insert(idx, self.dword(rawb, irawb, shpb, ishpb, lexb, ilexb, err=errb,  ierr=ierrb)) #inserts b a
         #
-        self.n_tokens_noised_with[Eb] += 1
-        logging.debug('{}\t{} <-> {}'.format(Eb,rb,ra))
+        self.n_tokens_noised_with[errb] += 1
+        logging.debug('{}\t{} <-> {}'.format(errb,rawb,rawa))
         return True
 
     #########################################
-    ### $LEMM ############################### r, s, i, t, E, C, iC, (plm, p)
+    ### $LEMM ###############################
     #########################################
     def inject_lemm(self, idx):
+        if self.lemrules is None:
+            return False
         if idx >= len(self.s):
             return False
-        if 'E' in self.s[idx]:
+        if 'ierr' in self.s[idx]:
             return False
         if 'plm' not in self.s[idx]:
             return False
-        if self.lemrules is None:
+        if self.vocab_cor is not None and self.s[idx]['raw'] not in self.vocab_cor: #i don't append words that i cannot generate
             return False
-        if self.vocab_cor is not None and self.s[idx]['r'] not in self.vocab_cor: #i don't append words that i cannot generate
-            return False
-        t, new_plm = self.lemrules(self.s[idx])
-        if t is None:
-            return False
+        lex, new_plm = self.lemrules(self.s[idx])
         old_plm = str(self.s[idx]['plm'])
+        if lex is None:
+            return False
         #
-        r = reshape(t,self.s[idx]['s'])
-        i = self.flauberttok.ids(r, is_split_into_words=True)
-        E, iE = self.buildE('$LEMM')
-        s, i_s = self.buildS(r)
-        t, it = self.buildT(t)
-        C, iC, iCC = self.buildC(idx)
-        L, iL = self.buildL(idx)
-        logging.debug("L={} iL={}".format(L,iL))
+        raw = reshape(lex,self.s[idx]['shp'])
+        iraw = self.flauberttok.ids(raw, is_split_into_words=True)
+        lex, ilex = self.buildLex(raw)
+        err, ierr = self.buildErr('$LEMM')
+        shp, ishp = self.buildShp(raw)
+        cor, icor, iCOR =  self.buildCor_from(idx)
+        lng, ilng =  self.buildLng(idx)
         #
-        self.s[idx] = self.dword_create(r, s, i, t, i_s=i_s, E=E, iE=iE, C=C, iC=iC, iCC=iCC, L=L, iL=iL, p_cor=self.p_cor, p_lin=1.0)
+        self.s[idx] = self.dword(raw, iraw, shp, ishp, lex, ilex, err=err,  ierr=ierr,  cor=cor, icor=icor, iCOR=iCOR, lng=lng, ilng=ilng)
         #
-        self.n_tokens_noised_with[E] += 1
-        logging.debug('{}\t{} -> {}\t{} -> {}'.format(E,C,r,old_plm,new_plm))
+        self.n_tokens_noised_with[err] += 1
+        logging.debug('{}\t{} -> {}\t{} -> {}'.format(err,cor,raw,old_plm,new_plm))
         return True
 
     #########################################
-    ### $SPEL ############################### r, s, i, t, E, C, iC, (plm, p)
+    ### $SPEL ###############################
     #########################################
     def inject_spel(self, idx):
         if idx >= len(self.s):
             return False
-        if 'E' in self.s[idx]:
+        if 'ierr' in self.s[idx]:
             return False
-        if self.vocab_cor is not None and self.s[idx]['r'] not in self.vocab_cor: #i don't append words that i cannot generate
+        if self.vocab_cor is not None and self.s[idx]['raw'] not in self.vocab_cor: #i don't append words that i cannot generate
             return False
-        if not self.s[idx]['r'].isalpha() and self.s[idx]['r'] not in PUNCTUATION: ### alphabetic or punctuation (attention with hyphens)
+        if not self.s[idx]['raw'].isalpha() and self.s[idx]['raw'] not in PUNCTUATION: ### alphabetic or punctuation (attention with hyphens)
             return False
-        r = self.misspell(self.s[idx]['r'])
-        if r is None:
+        raw = self.misspell(self.s[idx]['raw'])
+        if raw is None:
             return False
         #
-        i = self.flauberttok.ids(r,is_split_into_words=True)
-        t = self.lexicon.inlexicon(r)
-        E, iE = self.buildE('$SPEL')
-        s, i_s = self.buildS(r)
-        C, iC, iCC = self.buildC(idx)
-        L, iL = self.buildL(idx)        
+        iraw = self.flauberttok.ids(raw,is_split_into_words=True)
+        lex, ilex = self.buildLex(raw)
+        err, ierr = self.buildErr('$SPEL')
+        shp, ishp = self.buildShp(raw)
+        cor, icor, iCOR = self.buildCor_from(idx)
+        #lng, ilng = self.buildLng(idx)        
         #
-        self.s[idx] = self.dword_create(r, s, i, t, i_s=i_s, E=E, iE=iE, C=C, iC=iC, iCC=iCC, L=L, iL=iL, p_cor=1.0, p_lin=self.p_lin)
+        self.s[idx] = self.dword(raw, iraw, shp, ishp, lex, ilex, err=err,  ierr=ierr,  cor=cor, icor=icor, iCOR=iCOR)
         #
-        self.n_tokens_noised_with[E] += 1
-        logging.debug('{}\t{} -> {}'.format(E,C,r))
+        self.n_tokens_noised_with[err] += 1
+        logging.debug('{}\t{} -> {}'.format(err,cor,raw))
         return True
 
     #########################################
-    ### $PHON ############################### r, s, i, t, E, C, iC, (plm, p)
+    ### $PHON ###############################
     #########################################
     def inject_phon(self, idx):
         if idx >= len(self.s):
             return False
-        if 'E' in self.s[idx]:
+        if 'ierr' in self.s[idx]:
             return False
-        if self.vocab_cor is not None and self.s[idx]['r'] not in self.vocab_cor: #i don't append words that i cannot generate
+        if self.vocab_cor is not None and self.s[idx]['raw'] not in self.vocab_cor: #i don't append words that i cannot generate
             return False
-        if self.s[idx] == '': #not in lexicon
+        if self.s[idx]['lex'] is None: #not in lexicon
             return False
-        t = self.homophones(self.s[idx]['t'])
-        if t is None:
+        lex = self.homophones(self.s[idx]['lex'])
+        if lex is None:
             return False
         #
-        r = reshape(t,self.s[idx]['s'])
-        i = self.flauberttok.ids(r, is_split_into_words=True)
-        E, iE = self.buildE('$PHON')
-        s, i_s = self.buildS(r)
-        C, iC, iCC = self.buildC(idx)
-        L, iL = self.buildL(idx)        
+        raw = reshape(lex,self.s[idx]['shp'])
+        iraw = self.flauberttok.ids(raw, is_split_into_words=True)
+        lex, ilex = self.buildLex(raw)
+        shp, ishp = self.buildShp(raw)
+        err, ierr = self.buildErr('$PHON')
+        cor, icor, iCOR = self.buildCor_from(idx)
+        #lng, ilng = self.buildLng(idx)
         #
-        self.s[idx] = self.dword_create(r, s, i, t, i_s=i_s, E=E, iE=iE, C=C, iC=iC, iCC=iCC, L=L, iL=iL, p_cor=1.0, p_lin=self.p_lin)
+        self.s[idx] = self.dword(raw, iraw, shp, ishp, lex, ilex, err=err,  ierr=ierr,  cor=cor, icor=icor, iCOR=iCOR)
         #
-        self.n_tokens_noised_with[E] += 1
-        logging.debug('{}\t{} -> {}'.format(E,C,r))
+        self.n_tokens_noised_with[err] += 1
+        logging.debug('{}\t{} -> {}'.format(err,cor,raw))
         return True
         
     #########################################
-    ### $CASE ############################### r, s, i, t, E, C, iC, (plm, p)
-    #########################################
-    def inject_case(self, idx):
-        if idx >= len(self.s):
-            return False
-        if 'E' in self.s[idx]:
-            return False
-        if self.vocab_cor is not None and self.s[idx]['r'] not in self.vocab_cor: #i don't append words that i cannot generate
-            return False
-        #
-        old_wrd = str(self.s[idx]['r'])
-        old_shape = str(self.s[idx]['s'])
-        if len(old_shape) == 1: ### all lowercased or uppercased
-            if len(old_wrd) == 1:
-                E, iE = self.buildE('$CASEn')
-                if old_shape == 'X':
-                    r = old_wrd.lower()
-                elif old_shape == 'x':
-                    r = old_wrd.upper()
-                else:
-                    return False
-            else: #len(old_wrd)>1
-                if random.random() < 0.5: #CASEn
-                    E, iE = self.buildE('$CASEn')
-                    if old_shape == 'X':
-                        r = old_wrd.lower()
-                    elif old_shape == 'x':
-                        r = old_wrd.upper()
-                    else:
-                        return False
-                else: #CASE1
-                    E, iE = self.buildE('$CASE1')
-                    if old_shape == 'X':
-                        r = old_wrd[0].lower() + old_wrd[1:]
-                    elif old_shape == 'x':
-                        r = old_wrd[0].upper() + old_wrd[1:]
-                    else:
-                        return False
-        else: #len(txt_shape) > 1 (i can only do CASE1)
-            E, iE = self.buildE('$CASE1')
-            if old_shape.startswith('X'):
-                r = old_wrd[0].lower() + old_wrd[1:]
-            elif old_shape.startswith('x'):
-                r = old_wrd[0].upper() + old_wrd[1:]
-            else:
-                return False
-        #
-        t = self.lexicon.inlexicon(r)
-        i = self.flauberttok.ids(r, is_split_into_words=True)
-        s, i_s = self.buildS(r)
-        C, iC, iCC = self.buildC(idx)
-        L, iL = self.buildL(idx)        
-        #
-        self.s[idx] = self.dword_create(r, s, i, t, i_s=i_s, E=E, iE=iE, C=C, iC=iC, iCC=iCC, L=L, iL=iL, p_cor=self.p_cor, p_lin=self.p_lin)
-        #
-        self.n_tokens_noised_with[E] += 1
-        logging.debug('{}\t{} -> {}'.format(E,C,r))
-        return True
-    
-    #########################################
-    ### $SPLT ############################### r, s, i, t, E, C, iC, (plm, p)
+    ### $SPLT ###############################
     #########################################
     def inject_splt(self, idx):
         if idx >= len(self.s):
             return False
-        if 'E' in self.s[idx]:
+        if 'ierr' in self.s[idx]:
             return False
         if idx+1 >= len(self.s):
             return False
-        if 'E' in self.s[idx+1]:
+        if 'ierr' in self.s[idx+1]:
             return False
-        if self.vocab_cor is not None and self.s[idx]['r'] not in self.vocab_cor: #i don't append words that i cannot generate
+        if self.vocab_cor is not None and self.s[idx]['raw'] not in self.vocab_cor: #i don't append words that i cannot generate
             return False
         #
-        old_wrd = str(self.s[idx]['r'])
-        r = str(self.s[idx]['r'] + self.s[idx+1]['r']) 
-        i = self.flauberttok.ids(r, is_split_into_words=True)
-        t = self.lexicon.inlexicon(r)
-        E, iE = self.buildE('$SPLT')
-        s, i_s = self.buildS(r)
-        C, iC, iCC = self.buildC(idx)
-        L, iL = self.buildL(idx)        
+        old_wrd = str(self.s[idx]['raw'])
+        raw = str(self.s[idx]['raw'] + self.s[idx+1]['raw']) 
+        iraw = self.flauberttok.ids(raw, is_split_into_words=True)
+        lex, ilex = self.buildLex(raw)
+        shp, ishp = self.buildShp(raw)
+        err, ierr = self.buildErr('$SPLT')
+        cor, icor, iCOR = self.buildCor_from(idx)
+        #lng, ilng = self.buildLng(idx)        
         #
-        self.s[idx] = self.dword_create(r, s, i, t, i_s=i_s, E=E, iE=iE, C=C, iC=iC, iCC=iCC, L=L, iL=iL, p_cor=1.0, p_lin=self.p_lin)
+        self.s[idx] = self.dword(raw, iraw, shp, ishp, lex, ilex, err=err,  ierr=ierr,  cor=cor, icor=icor, iCOR=iCOR)
         self.s.pop(idx+1) #deletes next
         #
-        self.n_tokens_noised_with[E] += 1
-        logging.debug('{}\t{} -> {}'.format(E,old_wrd,r))
+        self.n_tokens_noised_with[err] += 1
+        logging.debug('{}\t{} -> {}'.format(err,old_wrd,raw))
         return True
         
     #########################################
-    ### $MRGE ############################### r, s, i, t, E, C, iC, (plm, p)
+    ### $MRGE ###############################
     #########################################
     def inject_mrge(self, idx):
         if idx >= len(self.s):
             return False
-        if 'E' in self.s[idx]:
+        if 'err' in self.s[idx]:
             return False
-        old_wrd = str(self.s[idx]['r'])
+        old_wrd = str(self.s[idx]['raw'])
         minlen = 2 #minimum length of resulting spltted tokens
         if len(old_wrd) < 2*minlen:
             return False
         k = random.randint(minlen,len(old_wrd)-minlen)
         #
-        ra = old_wrd[:k]
-        ia = self.flauberttok.ids(ra,is_split_into_words=True)
-        ta = self.lexicon.inlexicon(ra)
-        Ea, iEa = self.buildE('$MRGE')
-        sa, i_sa = self.buildS(ra)
-        Ca, iCa, iCCa = self.buildC(idx)
-        La, iLa = self.buildL(idx)        
+        rawa = old_wrd[:k]
+        irawa = self.flauberttok.ids(rawa,is_split_into_words=True)
+        lexa, ilexa = self.buildLex(rawa)
+        shpa, ishpa = self.buildShp(rawa)
+        erra, ierra = self.buildErr('$MRGE')
+        #cora, icora, iCORa = self.buildCor_from(idx)
+        #lnga, ilnga = self.buildLng(idx)
         #
-        rb = old_wrd[k:]
-        ib = self.flauberttok.ids(rb,is_split_into_words=True)
-        tb = self.lexicon.inlexicon(rb)
-        Eb, iEb = self.buildE(KEEP)
-        sb, i_sb = self.buildS(rb)
-        Cb, iCb, iCCb = self.buildC(idx)
-        Lb, iLb = self.buildL(idx)        
+        rawb = old_wrd[k:]
+        irawb = self.flauberttok.ids(rawb,is_split_into_words=True)
+        lexb, ilexb = self.buildLex(rawb)
+        shpb, ishpb = self.buildShp(rawb)
+        errb, ierrb = self.buildErr(KEEP)
+        #corb, icorb, iCORb = self.buildCor_from(idx)
+        #lngb, lngb = self.buildLng(idx)        
         #
         self.s.pop(idx) #deletes idx
-        self.s.insert(idx, self.dword_create(rb, sb, ib, tb, i_s=i_sb, E=Eb, iE=iEb, C=Cb, iC=iCb, iCC=iCCa, L=La, iL=iLa, p_cor=self.p_cor, p_lin=self.p_lin)) #inserted b
-        self.s.insert(idx, self.dword_create(ra, sa, ia, ta, i_s=i_sa, E=Ea, iE=iEa, C=Ca, iC=iCa, iCC=iCCb, L=Lb, iL=iLb, p_cor=self.p_cor, p_lin=self.p_lin)) #inserted a b
+        self.s.insert(idx, self.dword(rawb, irawb, shpb, ishpb, lexb, ilexb, err=errb,  ierr=ierrb)) #inserted b
+        self.s.insert(idx, self.dword(rawa, irawa, shpa, ishpa, lexa, ilexa, err=erra,  ierr=ierra)) #inserted a b
         #
-        self.n_tokens_noised_with[Ea] += 1
-        logging.debug('{}\t{} -> {} {}'.format(Ea,old_wrd,ra,rb))
+        self.n_tokens_noised_with[erra] += 1
+        logging.debug('{}\t{} -> {} {}'.format(erra,old_wrd,rawa,rawb))
         return True
         
     #########################################
-    ### $HYPH ############################### r, s, i, t, E, C, iC, (plm, p)
+    ### $CASE ###############################
+    #########################################
+    def inject_case(self, idx):
+        if idx >= len(self.s):
+            return False
+        if 'ierr' in self.s[idx]:
+            return False
+        if self.vocab_cor is not None and self.s[idx]['raw'] not in self.vocab_cor: #i don't append words that i cannot generate
+            return False
+        #
+        old_wrd = str(self.s[idx]['raw'])
+        old_shape = str(self.s[idx]['shp'])
+        if len(old_shape) == 1: ### all lowercased or uppercased
+            if len(old_wrd) == 1:
+                err, ierr = self.buildErr('$CASEn')
+                if old_shape == 'X':
+                    raw = old_wrd.lower()
+                elif old_shape == 'x':
+                    raw = old_wrd.upper()
+                else:
+                    return False
+            else: #len(old_wrd)>1
+                if random.random() < 0.5: #CASEn
+                    err, ierr = self.buildErr('$CASEn')
+                    if old_shape == 'X':
+                        raw = old_wrd.lower()
+                    elif old_shape == 'x':
+                        raw = old_wrd.upper()
+                    else:
+                        return False
+                else: #CASE1
+                    err, ierr = self.buildErr('$CASE1')
+                    if old_shape == 'X':
+                        raw = old_wrd[0].lower() + old_wrd[1:]
+                    elif old_shape == 'x':
+                        raw = old_wrd[0].upper() + old_wrd[1:]
+                    else:
+                        return False
+        else: #len(txt_shape) > 1 (i can only do CASE1)
+            err, ierr = self.buildErr('$CASE1')
+            if old_shape.startswith('X'):
+                raw = old_wrd[0].lower() + old_wrd[1:]
+            elif old_shape.startswith('x'):
+                raw = old_wrd[0].upper() + old_wrd[1:]
+            else:
+                return False
+        #
+        iraw = self.flauberttok.ids(raw, is_split_into_words=True)
+        lex, ilex = self.buildLex(raw)
+        shp, ishp = self.buildShp(raw)
+        #cor, icor, iCOR = self.buildCor_from(idx)
+        #lng, ilng = self.buildLng(idx)
+        #
+        self.s[idx] = self.dword(raw, iraw, shp, ishp, lex, ilex, err=err,  ierr=ierr)
+        #
+        self.n_tokens_noised_with[err] += 1
+        logging.debug('{}\t{} -> {}'.format(err,old_wrd,raw))
+        return True
+    
+    #########################################
+    ### $HYPH ###############################
     #########################################
     def inject_hyph(self, idx):
         if idx >= len(self.s):
             return False
-        if 'E' in self.s[idx]:
+        if 'ierr' in self.s[idx]:
             return False
-        old_wrd = str(self.s[idx]['r'])
+        old_wrd = str(self.s[idx]['raw'])
         
         if old_wrd.count('-') == 1: ### HYPHm: Saint-Tropez -> Saint Tropez
             k = old_wrd.find('-')
-            if k==0 or k==len(old_wrd)-1: ### hyphen not in the begining/end
+            if k==0 or k==len(old_wrd)-1: ### hyphen cannot be in the begining/end
                 return False
-            ra = old_wrd[:k]
-            ia = self.flauberttok.ids(ra, is_split_into_words=True)
-            ta = self.lexicon.inlexicon(ra)
-            Ea = '$HYPHm'
-            Ea, iEa = self.buildE('$HYPHm')
-            sa, i_sa = self.buildS(ra)
-            if sa not in ['x', 'X', 'Xx']:
+            rawa = old_wrd[:k]
+            irawa = self.flauberttok.ids(rawa, is_split_into_words=True)
+            lexa, ilexa = self.buildLex(rawa)
+            erra, ierra = self.buildErr('$HYPHm')
+            shpa, ishpa = self.buildShp(rawa)
+            if shpa not in ['x', 'X', 'Xx']:
                 return False
-            Ca, iCa, iCCa = self.buildC(idx)
-            La, iLa = self.buildL(idx)        
+            #cora, icora, iCCORa = self.buildCor_from(idx)
+            #lnga, ilnga = self.buildLng(idx)
             #
-            rb = old_wrd[k+1:]
-            ib = self.flauberttok.ids(rb, is_split_into_words=True)
-            tb = self.lexicon.inlexicon(rb)
-            Eb, iEb = self.buildE(KEEP)
-            sb, i_sb = self.buildS(rb)
-            if sb not in ['x', 'X', 'Xx']:
+            rawb = old_wrd[k+1:]
+            irawb = self.flauberttok.ids(rawb, is_split_into_words=True)
+            lexb, ilexb = self.buildLex(rawb)
+            errb, ierrb = self.buildErr(KEEP)
+            shpb, ishpb = self.buildShp(rawb)
+            if shpb not in ['x', 'X', 'Xx']:
                 return False
-            Cb, iCb, iCCb = self.buildC(idx)
-            Lb, iLb = self.buildL(idx)        
+            #corb, icorb, iCORb = self.buildCor_from(idx)
+            #lngb, ilngb = self.buildLng(idx)
+            #
             self.s.pop(idx) #deletes idx
-            self.s.insert(idx, self.dword_create(rb, sb, ib, tb, i_s=i_sb, E=Eb, iE=iEb, C=Cb, iC=iCb, iCC=iCCb, L=Lb, iL=iLb, p_cor=self.p_cor, p_lin=self.p_lin)) #inserted b
-            self.s.insert(idx, self.dword_create(ra, sa, ia, ta, i_s=i_sa, E=Ea, iE=iEa, C=Ca, iC=iCa, iCC=iCCa, L=La, iL=iLa, p_cor=self.p_cor, p_lin=self.p_lin)) #inserted a b
+            self.s.insert(idx, self.dword(rawb, irawb, shpb, ishpb, lexb, ilexb, err=errb,  ierr=ierrb)) #inserted b
+            self.s.insert(idx, self.dword(rawa, irawa, shpa, ishpa, lexa, ilexa, err=erra,  ierr=ierra)) #inserted a b
             #
-            self.n_tokens_noised_with[Ea] += 1
-            logging.debug('{}\t{} -> {} {}'.format(Ea,old_wrd,ra,rb))
+            self.n_tokens_noised_with[erra] += 1
+            logging.debug('{}\t{} -> {} {}'.format(erra,old_wrd,rawa,rawb))
             return True
         
         elif old_wrd.count('-') == 0: ### HYPHs: Saint Jacques => Saint - Jacques
             if idx == len(self.s)-1:
                 return False
-            if 'E' in self.s[idx+1]:
+            if 'ierr' in self.s[idx+1]:
                 return False
             if 'plm' not in self.s[idx]:
                 return False
             if 'plm' not in self.s[idx+1]:
                 return False
-            if isinstance(self.s[idx]['plm'],list):
-                logging.error(self.s[idx]['plm'])
-                sys.exit()
-            pos = self.s[idx]['plm'].split('|')[0]
-            if pos not in ['NOM', 'ADJ']:
+            if self.s[idx]['plm'].split('|')[0] not in ['NOM', 'ADJ']:
                 return False
-            pos = self.s[idx+1]['plm'].split('|')[0]
-            if pos not in ['NOM', 'ADJ']:
+            if self.s[idx+1]['plm'].split('|')[0] not in ['NOM', 'ADJ']:
                 return False
             #
-            ra = str(self.s[idx]['r'])
-            ia = list(self.s[idx]['i'])
-            ta = str(self.s[idx]['t'])
-            Ea = KEEP
-            Ea, iEa = self.buildE(KEEP)
-            sa, i_sa = self.buildS(idx)
-            Ca, iCa, iCCa = self.buildC(idx)
-            La, iLa = self.buildL(idx)
+            rawa, irawa = self.buildRaw_as(idx)
+            lexa, ilexa = self.buildLex_as(idx)
+            erra, ierra = self.buildErr(KEEP)
+            shpa, ishpa = self.buildShp_as(idx)
+            #cora, icora, iCORa = self.buildCor_from(idx)
+            #lnga, ilnga = self.buildLng(idx)
             #
-            rb = '-'
-            ib = self.flauberttok.ids(rb, is_split_into_words=True)
-            sb, i_sb = self.buildS(rb)
-            tb = self.lexicon.inlexicon(rb)
-            Eb, iEb = self.buildE('$HYPHs')
-            Cb = rb
-            iCb = int(self.vocab_cor[rb]) if self.vocab_cor is not None else None
-            iCCb = list(ib)
-            Lb, iLb = None, None
+            rawb = '-'
+            irawb = self.flauberttok.ids(rawb, is_split_into_words=True)
+            shpb, ishpb = self.buildShp(rawb)
+            lexb, ilexb = self.buildLex(rawb)
+            errb, ierrb = self.buildErr('$HYPHs')
             #
-            rc = str(self.s[idx+1]['r'])
-            ic = list(self.s[idx+1]['i'])
-            tc = str(self.s[idx+1]['t'])
-            Ec = KEEP
-            Ec, iEc = self.buildE(KEEP)
-            sc, i_sc = self.buildS(idx+1)
-            Cc, iCc, iCCc = self.buildC(idx+1)
-            Lc, iLc = self.buildL(idx+1)
+            rawc, irawc = self.buildRaw_as(idx+1)
+            lexc, ilexc = self.buildLex_as(idx+1)
+            errc, ierrc = self.buildErr(KEEP)
+            shpc, ishpc = self.buildShp_as(idx+1)
+            #corc, icorc, iCORc = self.buildCor_from(idx+1)
+            #lngc, ilngc = self.buildLng(idx+1)
             self.s.pop(idx) #deletes idx
             self.s.pop(idx) #deletes idx
-            self.s.insert(idx, self.dword_create(rc, sc, ic, tc, i_s=i_sc, E=Ec, iE=iEc, C=Cc, iC=iCc, iCC=iCCc, L=Lc, iL=iLc, p_cor=self.p_cor, p_lin=self.p_lin)) #inserted c
-            self.s.insert(idx, self.dword_create(rb, sb, ib, tb, i_s=i_sb, E=Eb, iE=iEb, C=Cb, iC=iCb, iCC=iCCb, L=Lb, iL=iLb, p_cor=self.p_cor, p_lin=self.p_lin)) #inserted b c
-            self.s.insert(idx, self.dword_create(ra, sa, ia, ta, i_s=i_sa, E=Ea, iE=iEa, C=Ca, iC=iCa, iCC=iCCa, L=La, iL=iLa, p_cor=self.p_cor, p_lin=self.p_lin)) #inserted a b c
+            self.s.insert(idx, self.dword(rawc, irawc, shpc, ishpc, lexc, ilexc, err=errc,  ierr=ierrc)) #inserted c
+            self.s.insert(idx, self.dword(rawb, irawb, shpb, ishpb, lexb, ilexb, err=errb,  ierr=ierrb)) #inserted b c
+            self.s.insert(idx, self.dword(rawa, irawa, shpa, ishpa, lexa, ilexa, err=erra,  ierr=ierra)) #inserted a b c
             #
-            self.n_tokens_noised_with[Eb] += 1
-            logging.debug('{}\t{} {} -> {} {} {}'.format(Eb,old_wrd,rc,ra,rb,rc))
+            self.n_tokens_noised_with[errb] += 1
+            logging.debug('{}\t{} {} -> {} {} {}'.format(errb,rawa,rawc,rawa,rawb,rawc))
             return True
         
         return False
     
+    def buildRaw_as(self, idx):
+        raw = str(self.s[idx]['raw'])
+        iraw = list(self.s[idx]['iraw'])
+        return raw, iraw
+
+    def buildShp_as(self, idx):
+        shp = str(self.s[idx]['shp'])
+        ishp = int(self.s[idx]['ishp'])
+        return shp, ishp
+
+    def buildShp(self, raw):
+        shp = shape_of_word(raw) #compute new shape
+        ishp = int(self.vocab_sha[shp]) #if self.vocab_sha is not None else None
+        return shp, ishp
+
+    def buildLex_as(self, idx):
+        lex = str(self.s[idx]['lex'])
+        ilex = int(self.s[idx]['ilex'])
+        return lex, ilex
+
+    def buildLex(self, raw):
+        lex = self.lexicon.inlexicon(raw)
+        ilex = lex is not None
+        ilex = int(self.vocab_inl[ilex]) #if self.vocab_inl is not None else None
+        return lex, ilex
+    
+    def buildErr(self, err):
+        err = str(err)
+        ierr = int(self.vocab_err[err]) #if self.vocab_err is not None else None
+        return err, ierr
+
+    def buildLng(self, idx):
+        if 'plm' not in self.s[idx] or self.s[idx]['plm'] is None:
+            #logging.info('not plm for idx={} {}'.format(idx,self.s[idx]['raw']))
+            return None, None
+        lng = self.s[idx]['plm'].split('|')
+        lng.pop(1) #remove lemma
+        lng = str('|'.join(lng))
+        ilng = int(self.vocab_lng[lng]) #if self.vocab_lng is not None else None
+        return lng, ilng
+            
+    def buildCor_from(self, idx):
+        cor = str(self.s[idx]['raw'])
+        icor = self.vocab_cor[cor]
+        iCOR = list(self.s[idx]['iraw'])
+        return cor, icor, iCOR
+        
+    def dword(self, raw, iraw, shp, ishp, lex, ilex, err=None, ierr=None, cor=None, icor=None, iCOR=None, lng=None, ilng=None):
+        d = {'raw':str(raw), 'iraw':list(iraw), 'shp':str(shp), 'ishp':int(ishp), 'lex':str(lex), 'ilex':str(ilex)}
+        if err is not None and ierr is not None:
+            d['err'] = str(err)
+            d['ierr'] = int(ierr)
+        if cor is not None and icor is not None and iCOR is not None:
+            d['cor'] = str(cor)
+            d['icor'] = int(icor)
+            d['iCOR'] = list(iCOR)
+        if lng is not None and ilng is not None:
+            d['lng'] = str(lng)
+            d['ilng'] = int(ilng)
+        return d
+
 if __name__ == '__main__': 
 
     parser = argparse.ArgumentParser()
@@ -590,7 +599,7 @@ if __name__ == '__main__':
     parser.add_argument('--max_n', type=int, default=4, help='Maximum number of noises per sentence (4)')
     parser.add_argument('--max_r', type=float, default=0.3, help='Maximum ratio of noises/words per sentence (0.3)')
     parser.add_argument('--p_cor', type=float, default=0.5, help='probability of using cor layer when no err (0.5)')
-    parser.add_argument('--p_lin', type=float, default=0.5, help='probability of using lin layer when no err (0.5)')
+    parser.add_argument('--p_lng', type=float, default=0.5, help='probability of using lng layer when no err (0.5)')
     #
     parser.add_argument('--w_phon', type=int, default=3, help='Weight of PHON noise [err/cor] (3)')
     parser.add_argument('--w_lemm', type=int, default=5, help='Weight of LEMM noise [err/cor] (5)')
@@ -614,7 +623,7 @@ if __name__ == '__main__':
         if k.startswith('w_'):
             noises.append([k[2:], v])
     
-    noiser = Noiser(noises,args.lemrules,args.lex,args.vocC,args.vocF,args.max_n,args.max_r,args.p_cor,args.p_lin,args.seed)
+    noiser = Noiser(noises,args.lemrules,args.lex,args.vocC,args.vocF,args.max_n,args.max_r,args.p_cor,args.p_lng,args.seed)
 
     n_sents = 0
     tic = time.time()

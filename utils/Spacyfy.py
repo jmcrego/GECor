@@ -31,10 +31,14 @@ class Spacyfy():
             logging.info('Loaded {} with modules {}'.format(m, self.nlp.pipe_names))
 
     def read_lines(self,fn,one_out_of=1):
-        logging.info('Reading from {}...'.format(fn))
+        logging.info('Reading from {}... (using 1 out of {} examples)'.format(fn,one_out_of))
         with open(fn, 'r', encoding='utf-8') if fn != "stdin" else sys.stdin as fd:
             self.lines = []
             for i,line in enumerate(fd):
+                line2 = line.replace(u'\xa0',' ').replace(u'\u202f',' ').replace(u'\u00ad','').replace(u'\u200f','').replace(u'\u2009',' ')
+                if line != line2:
+                    logging.debug('removed characters in line:{}\n{}{}'.format(i+1,line,line2))
+                    line = line2
                 if i%one_out_of == 0:
                     self.lines.append(line.strip())
         logging.info('Read {} lines from {}'.format(len(self.lines),fn))
@@ -60,9 +64,6 @@ class Spacyfy():
                 for token in doc:
                     if ' ' in token.text or ' ' in token.lemma_:
                         continue
-                    #if u'\xa0' in token.text or u'\u202f' in token.text: #filter spurious words: \u202f \xa0
-                    #    logging.debug('Found bad character in token: {} DISCARDED token'.format(token.text))
-                    #    continue
                     line.append(self.token2dword(token))
                 yield line
                     

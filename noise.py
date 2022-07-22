@@ -31,8 +31,8 @@ if __name__ == '__main__':
     #
     parser.add_argument('--max_n', type=int, default=7, help='Maximum number of noises per sentence (7)')
     parser.add_argument('--max_r', type=float, default=0.3, help='Maximum ratio of noises/words per sentence (0.3)')
-    parser.add_argument('--p_correc', type=float, default=0.5, help='probability of using cor layer without err (0.5)')
-    parser.add_argument('--p_lfeats', type=float, default=0.5, help='probability of using lin layer without err (0.5)')
+    parser.add_argument('--p_cor', type=float, default=0.5, help='probability of using cor layer without err (0.5)')
+    parser.add_argument('--p_lng', type=float, default=0.5, help='probability of using lng layer without err (0.5)')
     #
     parser.add_argument('--w_phon', type=int, default=4, help='Weight of PHON noise [err/cor] (4)')
     parser.add_argument('--w_lemm', type=int, default=6, help='Weight of LEMM noise [err/cor] (6)')
@@ -56,7 +56,7 @@ if __name__ == '__main__':
         if k.startswith('w_'):
             noises.append([k[2:], v])
     
-    noiser = Noiser(noises,args.lem,args.lex,args.pho,args.errors,args.correc,args.lfeats,args.shapes,args.inlexi,args.max_n,args.max_r,args.p_correc,args.p_lfeats,args.seed)
+    noiser = Noiser(noises,args.lem,args.lex,args.pho,args.errors,args.correc,args.lfeats,args.shapes,args.inlexi,args.max_n,args.max_r,args.p_cor,args.p_lng,args.seed)
 
     n_sents = 0
     tic = time.time()
