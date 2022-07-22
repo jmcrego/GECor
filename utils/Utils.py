@@ -122,30 +122,30 @@ def conll(l):
     out = []
     for w in l:
         wout = []
-        if 'r' in w:
-            wout.append(w['r'])
-        if 'i' in w:
-            wout.append("i:{}".format('-'.join(list(map(str,w['i'])))))
-        if 's' in w:
-            wout.append('s:'+w['s'])
-        if 'is' in w:
-            wout.append('is:'+str(w['is']))
-        if 't' in w:
-            wout.append('t:'+str(w['t']!=''))
-        if 'E' in w:
-            wout.append('E:'+w['E'])
-        if 'iE' in w:
-            wout.append('iE:'+str(w['iE']))
-        if 'C' in w:
-            wout.append('C:'+w['C'])
-        if 'iC' in w:
-            wout.append('iC:'+str(w['iC']))
-        if 'iCC' in w:
-            wout.append("iCC:{}".format('-'.join(list(map(str,w['iCC'])))))
-        if 'L' in w:
-            wout.append('L:'+w['L'])
-        if 'iL' in w:
-            wout.append('iL:'+str(w['iL']))
+        if 'raw' in w:
+            wout.append(w['raw'])
+        if 'iraw' in w:
+            wout.append("iraw:{}".format('-'.join(list(map(str,w['iraw'])))))
+        if 'shp' in w:
+            wout.append('shp:'+w['shp'])
+        if 'ishp' in w:
+            wout.append('ishp:'+str(w['ishp']))
+        if 'lex' in w:
+            wout.append('lex:'+str(w['lex']!=''))
+        if 'err' in w:
+            wout.append('err:'+w['err'])
+        if 'ierr' in w:
+            wout.append('ierr:'+str(w['ierr']))
+        if 'cor' in w:
+            wout.append('cor:'+w['cor'])
+        if 'icor' in w:
+            wout.append('icor:'+str(w['icor']))
+        if 'iCOR' in w:
+            wout.append("iCOR:{}".format('-'.join(list(map(str,w['iCOR'])))))
+        if 'lng' in w:
+            wout.append('lng:'+w['lng'])
+        if 'ilng' in w:
+            wout.append('ilng:'+str(w['ilng']))
 #        if 'plm' in w:
 #            wout.append(w['plm'])
         out.append('\t'.join(wout))

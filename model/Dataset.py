@@ -8,9 +8,10 @@ import logging
 import numpy as np
 from collections import defaultdict
 from model.Vocab import Vocab
-from utils.Utils import create_logger, SEPAR1, SEPAR2, KEEP, conll
-    
-#def debug_batch(idxs, batch_raw, batch_ids_src, batch_ids_agg, batch_ids_err, batch_ids_lin, batch_ids_cor, batch_ids_COR):
+from utils.Utils import create_logger, SEPAR1, SEPAR2, KEEP #, conll
+from utils.Conll import Conll
+
+#def debug_batch(idxs, batch_raw, batch_ids_src, batch_ids_agg, batch_ids_err, batch_ids_lng, batch_ids_cor, batch_ids_COR):
 #    logging.debug('Batch {}'.format(idxs))
 #    src = batch_ids_src.tolist()
 #    agg = batch_ids_agg.tolist()
@@ -41,15 +42,16 @@ def pad_listoflists(ll, pad=0, maxl=0, n_subt=1):
     return torch.Tensor(ll).to(dtype=torch.long) ### convert to tensor
             
 class Dataset():
-    def __init__(self, fname, err, cor, lin, sha, flauberttok, noiser, args):
+    def __init__(self, fname, err, cor, lng, sha, inl, flauberttok, noiser, args):
         super(Dataset, self).__init__()
         if not os.path.isfile(fname):
             logging.error('Cannot read file {}'.format(fname))
             sys.exit()
         self.err = err
         self.cor = cor #may be None
-        self.lin = lin #may be None
+        self.lng = lng #may be None
         self.sha = sha #may be None
+        self.inl = inl #may be None
         #self.flauberttok = flauberttok
         #self.noiser = noiser
         self.args = args
@@ -65,17 +67,19 @@ class Dataset():
         self.idx_PAD_err = err.idx_PAD # <pad> in err vocabulary
         #
         self.idx_PAD_cor = cor.idx_PAD if cor is not None else None #<pad> in cor vocabulary 
-        self.idx_PAD_lin = lin.idx_PAD if lin is not None else None #<pad> in lin vocabulary 
+        self.idx_PAD_lng = lng.idx_PAD if lng is not None else None #<pad> in lng vocabulary 
         self.idx_PAD_COR = 2 #"<pad>": 2, https://huggingface.co/flaubert/flaubert_base_cased/raw/main/vocab.json
         self.idx_PAD_sha = sha.idx_PAD if sha is not None else None #<pad> in sha vocabulary 
+        self.idx_PAD_inl = inl.idx_PAD if inl is not None else None #<pad> in inl vocabulary 
         n_truncated = 0
         n_filtered = 0
         self.Data = []
+        conll = Conll(tags=True)
         with open(fname, 'r') as fd:
             idx = 0
             for l in fd:
                 ldict = json.loads(l)
-                logging.debug("RAW({}): \n{}".format(idx,conll(ldict)))
+                #logging.debug("RAW({}): \n{}".format(idx,conll(ldict)))
                 ### inject noise ###
                 if noiser is not None:
                     ldict = noiser(ldict)
@@ -90,9 +94,9 @@ class Dataset():
                     logging.warning('line {} filtered'.format(idx))
                     continue
                 ### format sentence ###
-                ids_src, str_src, ids_err, ids_cor, ids_lin, ids_COR, ids_sha, ids_agg = self.format_sentence(ldict,idx)
+                ids_src, str_src, ids_err, ids_cor, ids_lng, ids_COR, ids_sha, ids_agg = self.format_sentence(ldict,idx)
                 ### keep record ###
-                self.Data.append({'idx':idx, 'ldict':ldict, 'ids_src':ids_src, 'str_src':str_src, 'ids_err':ids_err, 'ids_cor':ids_cor, 'ids_lin':ids_lin, 'ids_COR':ids_COR, 'ids_sha':ids_sha, 'ids_agg':ids_agg})
+                self.Data.append({'idx':idx, 'ldict':ldict, 'ids_src':ids_src, 'str_src':str_src, 'ids_err':ids_err, 'ids_cor':ids_cor, 'ids_lng':ids_lng, 'ids_COR':ids_COR, 'ids_sha':ids_sha, 'ids_agg':ids_agg})
                 idx += 1
         logging.info('Read {} examples from {} [{} filtered, {} truncated]'.format(len(self.Data),fname,n_filtered,n_truncated))
         
@@ -100,14 +104,14 @@ class Dataset():
         ltoks = []
         lerrors = []
         lcorrs = []
-        llins = []
+        llngs = []
         #
         str_src = [] # <s>   This  is    my    exxample  </s>
         ids_src = [] # 0     234   31    67    35   678  1     (0:<s>, 1:</s>)
         ids_agg = [] # 0     1     2     3     4    4    5     (indicates to which tok is aligned each subtoken) ### used for inference
         ids_err = [] # 0     1     1     1     4         0     (0:<PAD>, 1:$KEEP, 4:$SPELL)
         ids_cor = [] # 0     0     0     0     624       0     (0:<PAD>, 624:example)
-        ids_lin = [] # 0     0     3     0     0         0     (0:<PAD>, 3:pres_ind_3ps)
+        ids_lng = [] # 0     0     3     0     0         0     (0:<PAD>, 3:pres_ind_3ps)
         ids_COR = [] # [0,0] [0,0] [0,0] [0,0] [347,4]   [0,0] (0:<PAD>, [347,4]:example, when n_subt=2)
         ids_sha = [] # 0     3     2     2     2         0     (0:<PAD>, 3:Xx, 2:x)
         #
@@ -116,56 +120,56 @@ class Dataset():
         ids_agg.append(0)
         ids_err.append(self.idx_PAD_err)
         ids_cor.append(self.idx_PAD_cor)
-        ids_lin.append(self.idx_PAD_lin)
+        ids_lng.append(self.idx_PAD_lng)
         ids_sha.append(self.idx_PAD_sha)
         ids_COR.append([self.idx_PAD_COR]*self.args.n_subt)
         for i,dtok in enumerate(ldict):
-            str_src.append(dtok['r'])
-            n_subtok = len(dtok['i'])
-            ids_src += dtok['i']
+            str_src.append(dtok['raw'])
+            n_subtok = len(dtok['iraw'])
+            ids_src += dtok['iraw']
             ids_agg += [i+1]*n_subtok #ex: [1,1]
-            ids_err.append(dtok['iE'] if 'iE' in dtok else self.idx_PAD_err)
-            ids_cor.append(dtok['iC'] if 'iC' in dtok else self.idx_PAD_cor)
-            ids_lin.append(dtok['iL'] if 'iL' in dtok else self.idx_PAD_lin)
-            ids_COR.append(dtok['iCC'] if 'iCC' in dtok else [self.idx_PAD_COR]*self.args.n_subt) ### idx_PAD_COR indicates nothing to predict
+            ids_err.append(dtok['ierr'] if 'ierr' in dtok else self.idx_PAD_err)
+            ids_cor.append(dtok['icor'] if 'icor' in dtok else self.idx_PAD_cor)
+            ids_lng.append(dtok['ilng'] if 'ilng' in dtok else self.idx_PAD_lng)
+            ids_COR.append(dtok['iCOR'] if 'iCOR' in dtok else [self.idx_PAD_COR]*self.args.n_subt) ### idx_PAD_COR indicates nothing to predict
             if len(ids_COR[-1]) < self.args.n_subt:
                 ids_COR[-1] += [4]* (self.args.n_subt - len(ids_COR[-1])) ### 4 corresponds to flaubert model token: <special0> that must be predicted (while <pad> indicates nothing to predict)
             elif len(ids_COR[-1]) > self.args.n_subt:
                 ids_COR[-1] = ids_COR[-1][:self.args.n_subt] ### must be exactly n_subt tokens
-            ids_sha.append(dtok['is'] if 'is' in dtok else self.idx_PAD_sha)
+            ids_sha.append(dtok['ishp'] if 'ishp' in dtok else self.idx_PAD_sha)
             ### for debug purpose
             if ids_err[-1] != self.idx_PAD_err:
-                ltoks.append(dtok['r'])
+                ltoks.append(dtok['raw'])
                 lerrors.append(self.err[ids_err[-1]])
             if ids_cor[-1] != self.idx_PAD_cor:
                 lcorrs.append(self.cor[ids_cor[-1]])
-            if ids_lin[-1] != self.idx_PAD_lin:
-                llins.append(self.lin[ids_lin[-1]])
+            if ids_lng[-1] != self.idx_PAD_lng:
+                llngs.append(self.lng[ids_lng[-1]])
             ###
         str_src.append('</s>')
         ids_src.append(self.idx_EOS_src)
         ids_agg.append(ids_agg[-1]+1)
         ids_err.append(self.idx_PAD_err)
         ids_cor.append(self.idx_PAD_cor)
-        ids_lin.append(self.idx_PAD_lin)
+        ids_lng.append(self.idx_PAD_lng)
         ids_COR.append([self.idx_PAD_COR]*self.args.n_subt)
         ids_sha.append(self.idx_PAD_sha)
         assert(len(ids_src) == len(ids_agg))
         assert(len(str_src) == len(ids_err))
         assert(len(str_src) == len(ids_cor))
-        assert(len(str_src) == len(ids_lin))
+        assert(len(str_src) == len(ids_lng))
         assert(len(str_src) == len(ids_COR))
         assert(len(str_src) == len(ids_sha))
-        logging.debug('idx {}'.format(idx))
-        logging.debug('ids_src {}'.format(ids_src))
-        logging.debug('ids_agg {}'.format(ids_agg))
-        logging.debug('str_src {}\t{}'.format(str_src, '\t'.join(ltoks)))
-        logging.debug('ids_err {}\t{}'.format(ids_err, '\t'.join(lerrors)))
-        logging.debug('ids_cor {}\t{}'.format(ids_cor, '\t'.join(lcorrs)))
-        logging.debug('ids_lin {}\t{}'.format(ids_lin, '\t'.join(llins)))
-        logging.debug('ids_COR {}'.format(ids_COR))
-        logging.debug('ids_sha {}'.format(ids_sha))
-        return ids_src, str_src, ids_err, ids_cor, ids_lin, ids_COR, ids_sha, ids_agg
+        #logging.debug('idx {}'.format(idx))
+        #logging.debug('ids_src {}'.format(ids_src))
+        #logging.debug('ids_agg {}'.format(ids_agg))
+        #logging.debug('str_src {}\t{}'.format(str_src, '\t'.join(ltoks)))
+        #logging.debug('ids_err {}\t{}'.format(ids_err, '\t'.join(lerrors)))
+        #logging.debug('ids_cor {}\t{}'.format(ids_cor, '\t'.join(lcorrs)))
+        #logging.debug('ids_lng {}\t{}'.format(ids_lng, '\t'.join(llngs)))
+        #logging.debug('ids_COR {}'.format(ids_COR))
+        #logging.debug('ids_sha {}'.format(ids_sha))
+        return ids_src, str_src, ids_err, ids_cor, ids_lng, ids_COR, ids_sha, ids_agg
 
 #    def build_cor_aggregate(self, field_cor):
 #        myids_cor = list(map(int,field_cor.split(SEPAR2)))

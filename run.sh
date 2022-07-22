@@ -72,18 +72,15 @@ finl=./data/vocabs.INLEXI
 
 fsrc=./data/HEADLINES_2018_1_fr.txt
 #python spacyfy.py --lex $flex -n 8 -o $fsrc.json --shapes $fsha --inlexi $finl $fsrc
-#
-python noise.py --lex $flex --pho $fpho --lem $flem --errors $ferr --correc $fcor --lfeats $flin --shapes $fsha --inlexi $finl --seed 1234 < $fsrc.json > $fsrc.json.noise
+#python noise.py --lex $flex --pho $fpho --lem $flem --errors $ferr --correc $fcor --lfeats $flin --shapes $fsha --inlexi $finl --seed 1234 < $fsrc.json > $fsrc.json.noise
 
 fsrc=./data/BODY_2018_1_fr.txt
 #python spacyfy.py --lex $flex -n 8 -o $fsrc.json --shapes $fsha --inlexi $finl $fsrc
-#
-python noise.py --lex $flex --pho $fpho --lem $flem --errors $ferr --correc $fcor --lfeats $flin --shapes $fsha --inlexi $finl --seed 1234 < $fsrc.json > $fsrc.json.noise
+#python noise.py --lex $flex --pho $fpho --lem $flem --errors $ferr --correc $fcor --lfeats $flin --shapes $fsha --inlexi $finl --seed 1234 < $fsrc.json > $fsrc.json.noise
 
 fsrc=./data/news.2007.fr.txt
 #python spacyfy.py --lex $flex -n 8 -o $fsrc.json --shapes $fsha --inlexi $finl $fsrc
-#
-python noise.py --lex $flex --pho $fpho --lem $flem --errors $ferr --correc $fcor --lfeats $flin --shapes $fsha --inlexi $finl --seed 1234 < $fsrc.json > $fsrc.json.noise
+#python noise.py --lex $flex --pho $fpho --lem $flem --errors $ferr --correc $fcor --lfeats $flin --shapes $fsha --inlexi $finl --seed 1234 < $fsrc.json > $fsrc.json.noise
 
 fsrc=./data/BODY_2017_fr.txt
 #python spacyfy.py --lex $flex -n 32 -o $fsrc.json --shapes $fsha --inlexi $finl $fsrc
@@ -100,7 +97,7 @@ fsrc=./data/news.2021.fr.txt
 exp=./exp
 mkdir -p $exp
 
-#python train.py --model kkmodel --train data/gutenberg.fr.txt.noise --valid data/HEADLINES_2018_8_fr.txt.noise --err $ferr --cor $fcor --log_file kkmodel.log --cuda &
+#python train.py --model exp/kkmodel --train data/gutenberg.fr.txt.noise --valid data/HEADLINES_2018_8_fr.txt.noise --err $ferr --cor $fcor --log_file kkmodel.log --cuda &
 #python train.py --model kkmodel --train data/gutenberg.fr.txt.noise --valid data/HEADLINES_2018_8_fr.txt.noise --err $ferr --cor $fcor --log_file kkmodel.log --cuda --accum_n_batchs 8 &
 #python train.py --model models/kkmodel.00130000.pt --train kk.10k.json --err $ferr --cor $fcor
 

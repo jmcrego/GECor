@@ -47,7 +47,7 @@ class Noiser():
         self.n_tokens += len(self.s)
         n_noises_sentence = 0
         n_noises_toinject = random.randint(0, min(self.max_noises, int(len(self.s)*self.max_ratio)))
-        logging.debug("BEFORE: {}".format([d['raw'] for d in ldict]))
+        #logging.debug("BEFORE: {}".format([d['raw'] for d in ldict]))
         for _ in range(n_noises_toinject*2): ### try this maximum number of times before stopping
             if n_noises_sentence >= n_noises_toinject:
                 break
@@ -102,7 +102,7 @@ class Noiser():
                 lex, ilex = self.buildLex_as(idx)
                 self.s[idx] = self.dword(raw, iraw, shp, ishp, lex, ilex, err=err, ierr=ierr, cor=cor, icor=icor, iCOR=iCOR, lng=lng, ilng=ilng)
                 
-        logging.debug("AFTER : {}".format([d['raw'] for d in ldict]))
+        #logging.debug("AFTER : {}".format([d['raw'] for d in ldict]))
         return self.s
 
     def debug(self,tic):
